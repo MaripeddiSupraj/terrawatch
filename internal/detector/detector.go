@@ -1,0 +1,63 @@
+package detector
+
+import (
+	"fmt"
+	"time"
+
+	"github.com/MaripeddiSupraj/terrawatch/internal/config"
+	"github.com/MaripeddiSupraj/terrawatch/pkg/terraform"
+)
+
+type DriftResult struct {
+	Workspace  config.Workspace
+	Plan       *terraform.PlanResult
+	DetectedAt time.Time
+}
+
+type Detector struct {
+	cfg *config.Config
+}
+
+func New(cfg *config.Config) *Detector {
+	return &Detector{cfg: cfg}
+}
+
+// Detect runs terraform plan across all workspaces and returns those with drift.
+func (d *Detector) Detect() ([]DriftResult, error) {
+	var drifts []DriftResult
+
+	for _, ws := range d.cfg.Workspaces {
+		result, err := d.checkWorkspace(ws)
+		if err != nil {
+			return nil, fmt.Errorf("workspace %q: %w", ws.Name, err)
+		}
+		if result != nil {
+			drifts = append(drifts, *result)
+		}
+	}
+
+	return drifts, nil
+}
+
+func (d *Detector) checkWorkspace(ws config.Workspace) (*DriftResult, error) {
+	runner := terraform.New(d.cfg.Terraform.BinPath, ws.Path)
+
+	if err := runner.Init(); err != nil {
+		return nil, fmt.Errorf("init failed: %w", err)
+	}
+
+	plan, err := runner.Plan(ws.VarsFile)
+	if err != nil {
+		return nil, fmt.Errorf("plan failed: %w", err)
+	}
+
+	if !plan.HasChanges {
+		return nil, nil
+	}
+
+	return &DriftResult{
+		Workspace:  ws,
+		Plan:       plan,
+		DetectedAt: time.Now().UTC(),
+	}, nil
+}

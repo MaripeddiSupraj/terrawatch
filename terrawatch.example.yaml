@@ -1,0 +1,18 @@
+workspaces:
+  - name: production
+    path: ./environments/prod
+    vars_file: prod.tfvars        # optional
+  - name: staging
+    path: ./environments/staging
+
+github:
+  token: ${GITHUB_TOKEN}          # or set GITHUB_TOKEN env var
+  repo: your-org/your-infra-repo
+  base_branch: main
+  labels:
+    - drift
+    - infra
+  assignees: []                   # optional: GitHub usernames
+
+terraform:
+  bin_path: terraform             # optional: defaults to "terraform" on PATH
