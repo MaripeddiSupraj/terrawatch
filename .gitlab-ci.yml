@@ -1,0 +1,48 @@
+stages:
+  - drift
+
+variables:
+  TERRAFORM_VERSION: "1.9.0"
+  GO_VERSION: "1.22"
+
+.drift_base:
+  stage: drift
+  image: golang:${GO_VERSION}-alpine
+  before_script:
+    - apk add --no-cache curl unzip git
+    - curl -fsSL https://releases.hashicorp.com/terraform/${TERRAFORM_VERSION}/terraform_${TERRAFORM_VERSION}_linux_amd64.zip -o tf.zip
+    - unzip tf.zip -d /usr/local/bin && rm tf.zip
+    - go install github.com/MaripeddiSupraj/terrawatch@latest
+
+drift:detect:
+  extends: .drift_base
+  script:
+    - terrawatch detect --config terrawatch.yaml
+  environment:
+    name: drift-detection
+  rules:
+    # run on schedule
+    - if: $CI_PIPELINE_SOURCE == "schedule"
+    # allow manual trigger
+    - if: $CI_PIPELINE_SOURCE == "web"
+      when: manual
+
+drift:dry-run:
+  extends: .drift_base
+  script:
+    - terrawatch detect --config terrawatch.yaml --dry-run
+  rules:
+    # dry run on every MR for visibility
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+
+# Required CI/CD variables (set in GitLab → Settings → CI/CD → Variables):
+#
+#   GITHUB_TOKEN         personal access token or GitLab token with api scope
+#   AWS_ROLE_ARN         (if using AWS) role to assume via OIDC
+#   AWS_ACCESS_KEY_ID    (alternative to OIDC)
+#   AWS_SECRET_ACCESS_KEY
+#
+# For GitLab OIDC with AWS, add id_tokens to the job:
+#   id_tokens:
+#     AWS_OIDC_TOKEN:
+#       aud: https://gitlab.com
