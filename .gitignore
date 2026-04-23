@@ -1,0 +1,8 @@
+bin/
+dist/
+*.exe
+*.tfstate
+*.tfstate.backup
+.terraform/
+.env
+terrawatch.yaml
