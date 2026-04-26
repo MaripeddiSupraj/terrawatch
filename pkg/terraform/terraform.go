@@ -56,10 +56,12 @@ func (r *Runner) Init() error {
 }
 
 func (r *Runner) Plan(varsFile string) (*PlanResult, error) {
-	planFile := filepath.Join(r.workingDir, ".terrawatch-plan")
-	defer os.Remove(planFile)
+	// planName is relative to workingDir — terraform resolves it from its own CWD
+	const planName = ".terrawatch-plan"
+	planFileAbs := filepath.Join(r.workingDir, planName)
+	defer os.Remove(planFileAbs)
 
-	args := []string{"plan", "-out=" + planFile, "-detailed-exitcode", "-no-color", "-input=false"}
+	args := []string{"plan", "-out=" + planName, "-detailed-exitcode", "-no-color", "-input=false"}
 	if varsFile != "" {
 		args = append(args, "-var-file="+varsFile)
 	}
@@ -71,11 +73,11 @@ func (r *Runner) Plan(varsFile string) (*PlanResult, error) {
 		return &PlanResult{HasChanges: false, Output: out}, nil
 	case 2:
 		// changes present — get human-readable output
-		showOut, showErr := r.run("show", "-no-color", planFile)
+		showOut, showErr := r.run("show", "-no-color", planName)
 		if showErr != nil {
 			return nil, fmt.Errorf("terraform show: %w", showErr)
 		}
-		summary, summaryErr := r.parseSummary(planFile)
+		summary, summaryErr := r.parseSummary(planName)
 		if summaryErr != nil {
 			// non-fatal — best effort
 			summary = &Summary{}
@@ -86,8 +88,8 @@ func (r *Runner) Plan(varsFile string) (*PlanResult, error) {
 	}
 }
 
-func (r *Runner) parseSummary(planFile string) (*Summary, error) {
-	out, err := r.run("show", "-json", planFile)
+func (r *Runner) parseSummary(planName string) (*Summary, error) {
+	out, err := r.run("show", "-json", planName)
 	if err != nil {
 		return nil, err
 	}
