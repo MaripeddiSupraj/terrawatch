@@ -19,14 +19,14 @@ var detectCmd = &cobra.Command{
 	Use:   "detect",
 	Short: "Detect drift across all configured stacks",
 	Long: `Runs terraform plan on each configured stack.
-If drift is detected, a pull request is opened on GitHub with the plan output.
+If drift is detected, a pull request is opened on GitHub or GitLab with the plan output.
 
 Use --dry-run to print detected drift without opening a PR.`,
 	RunE: runDetect,
 }
 
 func init() {
-	detectCmd.Flags().BoolVar(&dryRun, "dry-run", false, "print drift without opening a PR")
+	detectCmd.Flags().BoolVar(&dryRun, "dry-run", false, "print drift without opening a PR/MR")
 	rootCmd.AddCommand(detectCmd)
 }
 
@@ -45,25 +45,23 @@ func runDetect(_ *cobra.Command, _ []string) error {
 	errs := 0
 	clean := 0
 
-	for _, ws := range cfg.Stacks {
-		stop := out.StackScanning(ws.Name)
-
+	for _, s := range cfg.Stacks {
+		stop := out.StackScanning(s.Name)
 		d := detector.New(cfg)
-		results, err := d.DetectOne(ws)
+		result, err := d.DetectOne(s)
 		stop()
 
 		if err != nil {
-			out.StackError(ws.Name, err)
+			out.StackError(s.Name, err)
 			errs++
 			continue
 		}
-
-		if results == nil {
-			out.StackClean(ws.Name)
+		if result == nil {
+			out.StackClean(s.Name)
 			clean++
 		} else {
-			out.StackDrift(ws.Name, results.Plan.Summary)
-			drifts = append(drifts, *results)
+			out.StackDrift(s.Name, result.Plan.Summary)
+			drifts = append(drifts, *result)
 		}
 	}
 
@@ -80,15 +78,15 @@ func runDetect(_ *cobra.Command, _ []string) error {
 		return nil
 	}
 
-	gh, err := reporter.NewGitHub(cfg.GitHub)
+	r, err := buildReporter(cfg)
 	if err != nil {
-		return fmt.Errorf("github client: %w", err)
+		return err
 	}
 
 	out.PRStart()
 	ctx := context.Background()
 	for _, drift := range drifts {
-		pr, err := gh.CreateDriftPR(ctx, drift)
+		pr, err := r.CreateDriftPR(ctx, drift)
 		if err != nil {
 			out.PRError(drift.Stack.Name, err)
 			continue
@@ -99,3 +97,21 @@ func runDetect(_ *cobra.Command, _ []string) error {
 	fmt.Fprintln(os.Stdout)
 	return nil
 }
+
+func buildReporter(cfg *config.Config) (reporter.Reporter, error) {
+	if cfg.GitLab.Repo != "" {
+		r, err := reporter.NewGitLab(cfg.GitLab)
+		if err != nil {
+			return nil, fmt.Errorf("gitlab client: %w", err)
+		}
+		return r, nil
+	}
+	r, err := reporter.NewGitHub(cfg.GitHub)
+	if err != nil {
+		return nil, fmt.Errorf("github client: %w", err)
+	}
+	return r, nil
+}
+
+// suppress unused import warning when os is only used in dry-run
+var _ = os.Stdout

@@ -143,12 +143,22 @@ stacks:
     backend_config:        # optional — key/value backend overrides
       key: value
 
+# Use either github OR gitlab — not both
+
 github:
   token: string            # optional — defaults to GITHUB_TOKEN env var
   repo: owner/repo         # required
   base_branch: main        # optional — defaults to "main"
   labels: []               # optional — labels to add to the PR
   assignees: []            # optional — GitHub usernames to assign
+
+gitlab:
+  token: string            # optional — defaults to GITLAB_TOKEN env var
+  repo: group/project      # required
+  url: https://gitlab.com  # optional — for self-hosted GitLab
+  base_branch: main        # optional — defaults to "main"
+  labels: []               # optional — labels to add to the MR
+  assignees: []            # optional — GitLab usernames to assign
 
 terraform:
   bin_path: terraform      # optional — path to terraform binary

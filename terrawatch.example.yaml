@@ -5,6 +5,9 @@ stacks:
   - name: staging
     path: ./environments/staging
 
+# Use either github OR gitlab — not both
+
+# GitHub
 github:
   token: ${GITHUB_TOKEN}          # or set GITHUB_TOKEN env var
   repo: your-org/your-infra-repo
@@ -12,7 +15,17 @@ github:
   labels:
     - drift
     - infra
-  assignees: []                   # optional: GitHub usernames
+  assignees: []
+
+# GitLab (comment out github block and uncomment this)
+# gitlab:
+#   token: ${GITLAB_TOKEN}        # or set GITLAB_TOKEN env var
+#   repo: your-group/your-project
+#   url: https://gitlab.com       # optional — for self-hosted GitLab
+#   base_branch: main
+#   labels:
+#     - drift
+#   assignees: []
 
 terraform:
-  bin_path: terraform             # optional: defaults to "terraform" on PATH
+  bin_path: terraform             # optional, defaults to "terraform" on PATH
