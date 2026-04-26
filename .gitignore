@@ -8,3 +8,4 @@ dist/
 .env
 terrawatch.yaml
 terrawatch-test.yaml
+terrawatch

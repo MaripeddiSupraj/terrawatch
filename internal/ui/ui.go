@@ -112,10 +112,15 @@ func (u *UI) PRStart() {
 	fmt.Fprintf(u.out, "  Opening pull requests...\n\n")
 }
 
-func (u *UI) PROpened(name, url string) {
-	fmt.Fprintf(u.out, "  %s  %-20s %s  %s\n",
+func (u *UI) PROpened(name, url string, existing bool) {
+	label := dim.Sprint("PR opened")
+	if existing {
+		label = dim.Sprint("PR exists")
+	}
+	fmt.Fprintf(u.out, "  %s  %-20s %s  %s  %s\n",
 		checkMark,
 		bold.Sprint(name),
+		label,
 		arrow,
 		color.New(color.FgCyan, color.Underline).Sprint(url),
 	)

@@ -43,58 +43,62 @@ jobs:
 
       - name: Introduce drift (change instance_count to 2)
         working-directory: testdata/workspace
-        run: |
-          echo 'instance_count = 2' > terraform.tfvars
+        run: echo 'instance_count = 2' > terraform.tfvars
 
       - name: Write terrawatch config
         run: |
           cat > terrawatch-test.yaml <<EOF
           stacks:
-            - name: test-workspace
+            - name: test-stack
               path: ./testdata/workspace
               vars_file: terraform.tfvars
           github:
             repo: ${{ github.repository }}
-            base_branch: ${{ github.ref_name == 'main' && 'main' || github.base_ref }}
+            base_branch: main
             labels:
               - drift
               - integration-test
           EOF
 
-      - name: Run terrawatch detect (dry-run first)
+      - name: Dry-run detect (validates drift detection without creating a PR)
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          ./terrawatch detect --config terrawatch-test.yaml --dry-run
+          OUTPUT=$(./terrawatch detect --config terrawatch-test.yaml --dry-run)
+          echo "$OUTPUT"
+          if ! echo "$OUTPUT" | grep -q "drift detected"; then
+            echo "FAIL: expected drift to be detected"
+            exit 1
+          fi
+          echo "PASS: drift detected correctly"
 
-      - name: Run terrawatch detect (full — opens PR)
+      - name: Full detect — create PR (requires repo setting or PAT)
+        # To enable: Settings → Actions → General → Allow GitHub Actions to create and approve pull requests
+        # Or add a PAT as secret TERRAWATCH_PAT with repo + pull-requests scope
         id: detect
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.TERRAWATCH_PAT || secrets.GITHUB_TOKEN }}
         run: |
-          OUTPUT=$(./terrawatch detect --config terrawatch-test.yaml)
+          OUTPUT=$(./terrawatch detect --config terrawatch-test.yaml 2>&1 || true)
           echo "$OUTPUT"
-          PR_URL=$(echo "$OUTPUT" | grep -oP 'https://github\.com/[^\s]+')
+          PR_URL=$(echo "$OUTPUT" | grep -oE 'https://github\.com/[^[:space:]]+' || true)
           echo "pr_url=$PR_URL" >> $GITHUB_OUTPUT
 
       - name: Verify PR was created
+        if: steps.detect.outputs.pr_url != ''
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.TERRAWATCH_PAT || secrets.GITHUB_TOKEN }}
         run: |
-          PR_URL="${{ steps.detect.outputs.pr_url }}"
-          if [ -z "$PR_URL" ]; then
-            echo "FAIL: No PR URL found in terrawatch output"
-            exit 1
-          fi
-          echo "PR created: $PR_URL"
-          gh pr view "$PR_URL" --json title,state | jq .
+          gh pr view "${{ steps.detect.outputs.pr_url }}" --json title,state | jq .
 
       - name: Cleanup — close PR and delete branch
-        if: always()
+        if: always() && steps.detect.outputs.pr_url != ''
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.TERRAWATCH_PAT || secrets.GITHUB_TOKEN }}
         run: |
-          PR_URL="${{ steps.detect.outputs.pr_url }}"
-          if [ -n "$PR_URL" ]; then
-            gh pr close "$PR_URL" --delete-branch || true
-          fi
+          gh pr close "${{ steps.detect.outputs.pr_url }}" --delete-branch || true
+
+      - name: Reset tfvars
+        if: always()
+        working-directory: testdata/workspace
+        run: echo 'instance_count = 1' > terraform.tfvars

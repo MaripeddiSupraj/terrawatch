@@ -20,8 +20,9 @@ type GitHub struct {
 }
 
 type PRResult struct {
-	URL    string
-	Number int
+	URL      string
+	Number   int
+	Existing bool // true if PR already existed
 }
 
 func ptr[T any](v T) *T { return &v }
@@ -44,8 +45,15 @@ func NewGitHub(cfg config.GitHub) (*GitHub, error) {
 	}, nil
 }
 
-// CreateDriftPR creates a branch with a drift report file and opens a PR.
+// CreateDriftPR creates a PR for drift, or returns the existing open one if found.
 func (g *GitHub) CreateDriftPR(ctx context.Context, d detector.DriftResult) (*PRResult, error) {
+	// check for an already-open drift PR for this stack
+	if existing, err := g.findExistingDriftPR(ctx, d.Stack.Name); err != nil {
+		return nil, fmt.Errorf("check existing PRs: %w", err)
+	} else if existing != nil {
+		return existing, nil
+	}
+
 	branch := branchName(d.Stack.Name, d.DetectedAt)
 	filename := reportFilename(d.Stack.Name, d.DetectedAt)
 	content := reportFileContent(d)
@@ -54,21 +62,47 @@ func (g *GitHub) CreateDriftPR(ctx context.Context, d detector.DriftResult) (*PR
 	if err != nil {
 		return nil, fmt.Errorf("get base SHA: %w", err)
 	}
-
 	if err := g.createBranch(ctx, branch, baseSHA); err != nil {
 		return nil, fmt.Errorf("create branch: %w", err)
 	}
-
 	if err := g.createFile(ctx, branch, filename, content, d); err != nil {
 		return nil, fmt.Errorf("create file: %w", err)
 	}
-
 	pr, err := g.openPR(ctx, branch, d)
 	if err != nil {
 		return nil, fmt.Errorf("open PR: %w", err)
 	}
-
 	return pr, nil
+}
+
+// findExistingDriftPR searches open PRs for one already tracking this stack.
+func (g *GitHub) findExistingDriftPR(ctx context.Context, stackName string) (*PRResult, error) {
+	opts := &gogithub.PullRequestListOptions{
+		State:       "open",
+		Base:        g.cfg.BaseBranch,
+		ListOptions: gogithub.ListOptions{PerPage: 100},
+	}
+	expectedTitle := prTitle(stackName)
+	for {
+		prs, resp, err := g.client.PullRequests.List(ctx, g.owner, g.repo, opts)
+		if err != nil {
+			return nil, err
+		}
+		for _, pr := range prs {
+			if pr.GetTitle() == expectedTitle {
+				return &PRResult{
+					URL:      pr.GetHTMLURL(),
+					Number:   pr.GetNumber(),
+					Existing: true,
+				}, nil
+			}
+		}
+		if resp.NextPage == 0 {
+			break
+		}
+		opts.Page = resp.NextPage
+	}
+	return nil, nil
 }
 
 func (g *GitHub) getBaseSHA(ctx context.Context) (string, error) {
@@ -100,28 +134,21 @@ func (g *GitHub) createFile(ctx context.Context, branch, filename, content strin
 }
 
 func (g *GitHub) openPR(ctx context.Context, branch string, d detector.DriftResult) (*PRResult, error) {
-	title := prTitle(d.Stack.Name)
-	body := prBody(d)
-
 	newPR := &gogithub.NewPullRequest{
-		Title: ptr(title),
+		Title: ptr(prTitle(d.Stack.Name)),
 		Head:  ptr(branch),
 		Base:  ptr(g.cfg.BaseBranch),
-		Body:  ptr(body),
+		Body:  ptr(prBody(d)),
 	}
-
 	pr, _, err := g.client.PullRequests.Create(ctx, g.owner, g.repo, newPR)
 	if err != nil {
 		return nil, err
 	}
-
 	if len(g.cfg.Labels) > 0 {
 		_, _, _ = g.client.Issues.AddLabelsToIssue(ctx, g.owner, g.repo, pr.GetNumber(), g.cfg.Labels)
 	}
-
 	if len(g.cfg.Assignees) > 0 {
 		_, _, _ = g.client.Issues.AddAssignees(ctx, g.owner, g.repo, pr.GetNumber(), g.cfg.Assignees)
 	}
-
 	return &PRResult{URL: pr.GetHTMLURL(), Number: pr.GetNumber()}, nil
 }

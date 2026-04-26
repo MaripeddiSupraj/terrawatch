@@ -93,7 +93,7 @@ func runDetect(_ *cobra.Command, _ []string) error {
 			out.PRError(drift.Stack.Name, err)
 			continue
 		}
-		out.PROpened(drift.Stack.Name, pr.URL)
+		out.PROpened(drift.Stack.Name, pr.URL, pr.Existing)
 	}
 
 	fmt.Fprintln(os.Stdout)
