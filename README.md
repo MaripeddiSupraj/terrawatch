@@ -8,10 +8,10 @@ No servers. No Kubernetes. Just Git.
 
 ```text
 Scheduled run (cron / CI)
-  → terraform plan on each workspace
+  → terraform plan on each stack
   → drift detected?
       NO  → silent, nothing happens
-      YES → opens a PR with plan diff + summary
+      YES → opens a PR/MR with plan diff + summary
 ```
 
 ## Install
@@ -46,6 +46,8 @@ go install github.com/MaripeddiSupraj/terrawatch@latest
 
 **1. Create a config file:**
 
+For GitHub:
+
 ```yaml
 # terrawatch.yaml
 stacks:
@@ -66,14 +68,38 @@ terraform:
   bin_path: terraform          # optional, defaults to terraform on PATH
 ```
 
+For GitLab:
+
+```yaml
+# terrawatch.yaml
+stacks:
+  - name: production
+    path: ./environments/prod
+  - name: staging
+    path: ./environments/staging
+
+gitlab:
+  repo: your-group/your-project
+  url: https://gitlab.com      # optional — omit for gitlab.com
+  base_branch: main
+  labels:
+    - drift
+
+terraform:
+  bin_path: terraform
+```
+
 **2. Run:**
 
 ```bash
-# dry run — see what drifted, no PR opened
+# dry run — see what drifted, no PR/MR opened
 GITHUB_TOKEN=xxx terrawatch detect --dry-run
 
-# full run — opens a PR per drifted workspace
+# full run — opens a PR/MR per drifted stack
 GITHUB_TOKEN=xxx terrawatch detect
+
+# print version
+terrawatch version
 ```
 
 ## CI integration
@@ -97,9 +123,11 @@ Required secrets:
 
 | Secret | Description |
 | --- | --- |
+| `TERRAWATCH_PAT` | PAT with `repo` scope — used to open PRs (recommended over GITHUB_TOKEN) |
 | `AWS_ROLE_ARN` | IAM role to assume via OIDC (no stored keys) |
-| `AWS_REGION` | AWS region (set as a variable, not a secret) |
-| `GITHUB_TOKEN` | Auto-provided by GitHub Actions |
+| `AWS_REGION` | AWS region (set as a Actions variable, not a secret) |
+
+> **Why a PAT?** GitHub Actions' built-in `GITHUB_TOKEN` requires enabling "Allow GitHub Actions to create and approve pull requests" — a blanket repo setting. A dedicated PAT scoped to one token is safer for production.
 
 ### GitLab CI
 
@@ -111,16 +139,23 @@ Required secrets:
 | Manual (`web`) trigger | Full detect — opens MR on drift |
 | Merge request pipeline | Dry run — prints drift, no MR opened |
 
-## PR output
+Required CI/CD variables:
 
-When drift is detected, terrawatch opens a PR like this:
+| Variable | Description |
+| --- | --- |
+| `GITLAB_TOKEN` | Personal access token with `api` scope |
+| `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` | AWS credentials (or use OIDC) |
+
+## PR/MR output
+
+When drift is detected, terrawatch opens a PR (GitHub) or MR (GitLab) like this:
 
 ```text
-[terrawatch] Drift detected in workspace: production
+[terrawatch] Drift detected in stack: production
 
-Workspace: production
-Path:      ./environments/prod
-Detected:  Wed, 23 Apr 2026 06:00:00 UTC
+Stack:      production
+Path:       ./environments/prod
+Detected:   Sun, 26 Apr 2026 06:00:00 UTC
 
 Summary
 | Add | Change | Destroy |
@@ -132,6 +167,28 @@ Plan
   ~ instance_type = "t3.small" -> "t3.medium"
 </details>
 ```
+
+If an open drift PR/MR already exists for a stack, terrawatch skips creating a duplicate and returns the existing one.
+
+## CLI output
+
+```text
+  terrawatch v0.1.0
+
+  Scanning 2 stack(s)
+
+  ✓  production          no drift
+  ⚠  staging             drift detected  +1 ~0 -0
+
+  ──────────────────────────────────────────────────
+  2 scanned  ·  1 drifted  ·  1 clean
+
+  Opening pull requests...
+
+  ✓  staging             PR opened  →  https://github.com/.../pull/5
+```
+
+Colors are disabled automatically in CI and non-TTY environments.
 
 ## Configuration reference
 
@@ -171,7 +228,8 @@ terraform:
 | Requires server | Yes | Yes (K8s) | No |
 | Stored credentials | Yes | Yes | No (OIDC) |
 | Detects drift | No | No | Yes |
-| Opens PR automatically | Yes | No | Yes |
+| Opens PR/MR automatically | Yes | No | Yes |
+| GitHub + GitLab support | GitHub only | No | Yes |
 | Open source | Yes | Yes | Yes |
 
 ## License
