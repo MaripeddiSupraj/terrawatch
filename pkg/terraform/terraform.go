@@ -9,6 +9,12 @@ import (
 	"path/filepath"
 )
 
+// Planner is implemented by Runner and can be substituted in tests.
+type Planner interface {
+	Init() error
+	Plan(varsFile string) (*PlanResult, error)
+}
+
 type Runner struct {
 	binPath    string
 	workingDir string
@@ -85,8 +91,13 @@ func (r *Runner) parseSummary(planFile string) (*Summary, error) {
 	if err != nil {
 		return nil, err
 	}
+	return ParseSummaryJSON(out)
+}
+
+// ParseSummaryJSON parses a terraform show -json output into a Summary.
+func ParseSummaryJSON(jsonStr string) (*Summary, error) {
 	var p planJSON
-	if err := json.Unmarshal([]byte(out), &p); err != nil {
+	if err := json.Unmarshal([]byte(jsonStr), &p); err != nil {
 		return nil, err
 	}
 	s := &Summary{}

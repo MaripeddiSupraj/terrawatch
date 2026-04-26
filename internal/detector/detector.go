@@ -15,11 +15,17 @@ type DriftResult struct {
 }
 
 type Detector struct {
-	cfg *config.Config
+	cfg         *config.Config
+	plannerFunc func(ws config.Workspace) terraform.Planner
 }
 
 func New(cfg *config.Config) *Detector {
-	return &Detector{cfg: cfg}
+	return &Detector{
+		cfg: cfg,
+		plannerFunc: func(ws config.Workspace) terraform.Planner {
+			return terraform.New(cfg.Terraform.BinPath, ws.Path)
+		},
+	}
 }
 
 // Detect runs terraform plan across all workspaces and returns those with drift.
@@ -40,7 +46,7 @@ func (d *Detector) Detect() ([]DriftResult, error) {
 }
 
 func (d *Detector) checkWorkspace(ws config.Workspace) (*DriftResult, error) {
-	runner := terraform.New(d.cfg.Terraform.BinPath, ws.Path)
+	runner := d.plannerFunc(ws)
 
 	if err := runner.Init(); err != nil {
 		return nil, fmt.Errorf("init failed: %w", err)
