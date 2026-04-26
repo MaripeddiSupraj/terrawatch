@@ -1,0 +1,99 @@
+name: Integration Test
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  integration:
+    name: End-to-end drift detection
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Set up Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "~1.9"
+
+      - name: Build terrawatch
+        run: go build -o terrawatch .
+
+      - name: Terraform init + apply (establish baseline state)
+        working-directory: testdata/workspace
+        run: |
+          terraform init
+          terraform apply -auto-approve -var="instance_count=1"
+
+      - name: Introduce drift (change instance_count to 2)
+        working-directory: testdata/workspace
+        run: |
+          echo 'instance_count = 2' > terraform.tfvars
+
+      - name: Write terrawatch config
+        run: |
+          cat > terrawatch-test.yaml <<EOF
+          workspaces:
+            - name: test-workspace
+              path: ./testdata/workspace
+              vars_file: terraform.tfvars
+          github:
+            repo: ${{ github.repository }}
+            base_branch: ${{ github.ref_name == 'main' && 'main' || github.base_ref }}
+            labels:
+              - drift
+              - integration-test
+          EOF
+
+      - name: Run terrawatch detect (dry-run first)
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          ./terrawatch detect --config terrawatch-test.yaml --dry-run
+
+      - name: Run terrawatch detect (full — opens PR)
+        id: detect
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          OUTPUT=$(./terrawatch detect --config terrawatch-test.yaml)
+          echo "$OUTPUT"
+          PR_URL=$(echo "$OUTPUT" | grep -oP 'https://github\.com/[^\s]+')
+          echo "pr_url=$PR_URL" >> $GITHUB_OUTPUT
+
+      - name: Verify PR was created
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          PR_URL="${{ steps.detect.outputs.pr_url }}"
+          if [ -z "$PR_URL" ]; then
+            echo "FAIL: No PR URL found in terrawatch output"
+            exit 1
+          fi
+          echo "PR created: $PR_URL"
+          gh pr view "$PR_URL" --json title,state | jq .
+
+      - name: Cleanup — close PR and delete branch
+        if: always()
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          PR_URL="${{ steps.detect.outputs.pr_url }}"
+          if [ -n "$PR_URL" ]; then
+            gh pr close "$PR_URL" --delete-branch || true
+          fi
