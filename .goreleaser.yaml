@@ -60,17 +60,18 @@ release:
   draft: false
   prerelease: auto
 
-brews:
-  - name: terrawatch
-    repository:
-      owner: MaripeddiSupraj
-      name: homebrew-tap
-      token: "{{ .Env.HOMEBREW_TAP_TOKEN }}"
-    directory: Formula
-    homepage: https://github.com/MaripeddiSupraj/terrawatch
-    description: Detect Terraform infrastructure drift and automatically open a pull request
-    license: MIT
-    test: |
-      system "#{bin}/terrawatch --help"
-    install: |
-      bin.install "terrawatch"
+# homebrew tap — uncomment once homebrew-tap repo is created
+# brews:
+#   - name: terrawatch
+#     repository:
+#       owner: MaripeddiSupraj
+#       name: homebrew-tap
+#       token: "{{ .Env.HOMEBREW_TAP_TOKEN }}"
+#     directory: Formula
+#     homepage: https://github.com/MaripeddiSupraj/terrawatch
+#     description: Detect Terraform infrastructure drift and automatically open a pull request
+#     license: MIT
+#     test: |
+#       system "#{bin}/terrawatch --help"
+#     install: |
+#       bin.install "terrawatch"
