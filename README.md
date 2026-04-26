@@ -6,7 +6,7 @@ No servers. No Kubernetes. Just Git.
 
 ## How it works
 
-```
+```text
 Scheduled run (cron / CI)
   → terraform plan on each workspace
   → drift detected?
@@ -16,11 +16,31 @@ Scheduled run (cron / CI)
 
 ## Install
 
+**Homebrew (Mac/Linux):**
+
+```bash
+brew install MaripeddiSupraj/tap/terrawatch
+```
+
+**Binary download (Linux/Mac/Windows):**
+
+Download the latest release from the [releases page](https://github.com/MaripeddiSupraj/terrawatch/releases) and place the binary on your `PATH`.
+
+```bash
+# Linux (amd64)
+curl -sSL https://github.com/MaripeddiSupraj/terrawatch/releases/latest/download/terrawatch_linux_amd64.tar.gz | tar xz
+sudo mv terrawatch /usr/local/bin/
+
+# Mac (Apple Silicon)
+curl -sSL https://github.com/MaripeddiSupraj/terrawatch/releases/latest/download/terrawatch_darwin_arm64.tar.gz | tar xz
+sudo mv terrawatch /usr/local/bin/
+```
+
+**Go install:**
+
 ```bash
 go install github.com/MaripeddiSupraj/terrawatch@latest
 ```
-
-Or download a binary from the [releases page](https://github.com/MaripeddiSupraj/terrawatch/releases).
 
 ## Quick start
 
@@ -74,8 +94,9 @@ on:
 ```
 
 Required secrets:
+
 | Secret | Description |
-|---|---|
+| --- | --- |
 | `AWS_ROLE_ARN` | IAM role to assume via OIDC (no stored keys) |
 | `AWS_REGION` | AWS region (set as a variable, not a secret) |
 | `GITHUB_TOKEN` | Auto-provided by GitHub Actions |
@@ -85,7 +106,7 @@ Required secrets:
 `.gitlab-ci.yml` is included. Three behaviours:
 
 | Trigger | Behaviour |
-|---|---|
+| --- | --- |
 | Scheduled pipeline | Full detect — opens MR on drift |
 | Manual (`web`) trigger | Full detect — opens MR on drift |
 | Merge request pipeline | Dry run — prints drift, no MR opened |
@@ -94,7 +115,7 @@ Required secrets:
 
 When drift is detected, terrawatch opens a PR like this:
 
-```
+```text
 [terrawatch] Drift detected in workspace: production
 
 Workspace: production
@@ -136,7 +157,7 @@ terraform:
 ## Why terrawatch?
 
 | | Atlantis | tf-controller | terrawatch |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | Requires server | Yes | Yes (K8s) | No |
 | Stored credentials | Yes | Yes | No (OIDC) |
 | Detects drift | No | No | Yes |

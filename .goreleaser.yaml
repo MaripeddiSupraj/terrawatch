@@ -1,0 +1,76 @@
+version: 2
+
+project_name: terrawatch
+
+before:
+  hooks:
+    - go mod tidy
+    - go test ./...
+
+builds:
+  - id: terrawatch
+    main: ./main.go
+    binary: terrawatch
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - darwin
+      - windows
+    goarch:
+      - amd64
+      - arm64
+    ignore:
+      - goos: windows
+        goarch: arm64
+    ldflags:
+      - -s -w
+      - -X main.version={{.Version}}
+      - -X main.commit={{.Commit}}
+      - -X main.date={{.Date}}
+
+archives:
+  - id: terrawatch
+    name_template: "{{ .ProjectName }}_{{ .Os }}_{{ .Arch }}"
+    format_overrides:
+      - goos: windows
+        formats: [zip]
+    files:
+      - README.md
+      - terrawatch.example.yaml
+
+checksum:
+  name_template: "checksums.txt"
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - "^docs:"
+      - "^test:"
+      - "^chore:"
+      - Merge pull request
+      - Merge branch
+
+release:
+  github:
+    owner: MaripeddiSupraj
+    name: terrawatch
+  name_template: "v{{ .Version }}"
+  draft: false
+  prerelease: auto
+
+brews:
+  - name: terrawatch
+    repository:
+      owner: MaripeddiSupraj
+      name: homebrew-tap
+      token: "{{ .Env.HOMEBREW_TAP_TOKEN }}"
+    directory: Formula
+    homepage: https://github.com/MaripeddiSupraj/terrawatch
+    description: Detect Terraform infrastructure drift and automatically open a pull request
+    license: MIT
+    test: |
+      system "#{bin}/terrawatch --help"
+    install: |
+      bin.install "terrawatch"
