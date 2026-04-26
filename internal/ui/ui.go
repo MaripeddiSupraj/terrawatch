@@ -54,10 +54,10 @@ func (u *UI) Header(version string) {
 }
 
 func (u *UI) ScanStart(total int) {
-	fmt.Fprintf(u.out, "  Scanning %d workspace(s)\n\n", total)
+	fmt.Fprintf(u.out, "  Scanning %d stack(s)\n\n", total)
 }
 
-func (u *UI) WorkspaceScanning(name string) func() {
+func (u *UI) StackScanning(name string) func() {
 	if u.isTTY && u.spinner != nil {
 		u.spinner.Suffix = fmt.Sprintf("  %s", dim.Sprintf("%-20s scanning...", name))
 		u.spinner.Start()
@@ -67,11 +67,11 @@ func (u *UI) WorkspaceScanning(name string) func() {
 	return func() {}
 }
 
-func (u *UI) WorkspaceClean(name string) {
+func (u *UI) StackClean(name string) {
 	fmt.Fprintf(u.out, "  %s  %-20s %s\n", checkMark, bold.Sprint(name), dim.Sprint("no drift"))
 }
 
-func (u *UI) WorkspaceDrift(name string, s terraform.Summary) {
+func (u *UI) StackDrift(name string, s terraform.Summary) {
 	summary := yellow.Sprintf("+%d ~%d -%d", s.Add, s.Change, s.Destroy)
 	fmt.Fprintf(u.out, "  %s  %-20s %s  %s\n",
 		warnMark,
@@ -81,7 +81,7 @@ func (u *UI) WorkspaceDrift(name string, s terraform.Summary) {
 	)
 }
 
-func (u *UI) WorkspaceError(name string, err error) {
+func (u *UI) StackError(name string, err error) {
 	fmt.Fprintf(u.out, "  %s  %-20s %s\n",
 		crossMark,
 		bold.Sprint(name),
@@ -131,7 +131,7 @@ func (u *UI) PRError(name string, err error) {
 
 func (u *UI) NoDrift() {
 	fmt.Fprintln(u.out)
-	fmt.Fprintf(u.out, "  %s  %s\n\n", checkMark, green.Sprint("All workspaces are in sync."))
+	fmt.Fprintf(u.out, "  %s  %s\n\n", checkMark, green.Sprint("All stacks are in sync."))
 }
 
 func repeat(s string, n int) string {

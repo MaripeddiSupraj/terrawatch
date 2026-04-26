@@ -18,9 +18,9 @@ type mockPlanner struct {
 func (m *mockPlanner) Init() error                              { return m.initErr }
 func (m *mockPlanner) Plan(_ string) (*terraform.PlanResult, error) { return m.result, m.planErr }
 
-func testConfig(workspaces ...config.Workspace) *config.Config {
+func testConfig(stacks ...config.Stack) *config.Config {
 	return &config.Config{
-		Workspaces: workspaces,
+		Stacks: stacks,
 		GitHub:     config.GitHub{Token: "tok", Repo: "org/repo", BaseBranch: "main"},
 	}
 }
@@ -28,14 +28,14 @@ func testConfig(workspaces ...config.Workspace) *config.Config {
 func newDetectorWithMock(cfg *config.Config, planner terraform.Planner) *Detector {
 	return &Detector{
 		cfg: cfg,
-		plannerFunc: func(_ config.Workspace) terraform.Planner {
+		plannerFunc: func(_ config.Stack) terraform.Planner {
 			return planner
 		},
 	}
 }
 
 func TestDetect_no_drift(t *testing.T) {
-	cfg := testConfig(config.Workspace{Name: "prod", Path: "./prod"})
+	cfg := testConfig(config.Stack{Name: "prod", Path: "./prod"})
 	d := newDetectorWithMock(cfg, &mockPlanner{
 		result: &terraform.PlanResult{HasChanges: false},
 	})
@@ -50,7 +50,7 @@ func TestDetect_no_drift(t *testing.T) {
 }
 
 func TestDetect_with_drift(t *testing.T) {
-	cfg := testConfig(config.Workspace{Name: "prod", Path: "./prod"})
+	cfg := testConfig(config.Stack{Name: "prod", Path: "./prod"})
 	d := newDetectorWithMock(cfg, &mockPlanner{
 		result: &terraform.PlanResult{
 			HasChanges: true,
@@ -66,8 +66,8 @@ func TestDetect_with_drift(t *testing.T) {
 	if len(drifts) != 1 {
 		t.Fatalf("expected 1 drift, got %d", len(drifts))
 	}
-	if drifts[0].Workspace.Name != "prod" {
-		t.Errorf("expected workspace 'prod', got %q", drifts[0].Workspace.Name)
+	if drifts[0].Stack.Name != "prod" {
+		t.Errorf("expected stack 'prod', got %q", drifts[0].Stack.Name)
 	}
 	if drifts[0].Plan.Summary.Change != 1 {
 		t.Errorf("expected Change=1, got %d", drifts[0].Plan.Summary.Change)
@@ -77,15 +77,15 @@ func TestDetect_with_drift(t *testing.T) {
 	}
 }
 
-func TestDetect_multiple_workspaces(t *testing.T) {
+func TestDetect_multiple_stacks(t *testing.T) {
 	cfg := testConfig(
-		config.Workspace{Name: "dev", Path: "./dev"},
-		config.Workspace{Name: "prod", Path: "./prod"},
+		config.Stack{Name: "dev", Path: "./dev"},
+		config.Stack{Name: "prod", Path: "./prod"},
 	)
 	calls := 0
 	d := &Detector{
 		cfg: cfg,
-		plannerFunc: func(ws config.Workspace) terraform.Planner {
+		plannerFunc: func(ws config.Stack) terraform.Planner {
 			calls++
 			hasDrift := ws.Name == "prod"
 			return &mockPlanner{
@@ -104,13 +104,13 @@ func TestDetect_multiple_workspaces(t *testing.T) {
 	if len(drifts) != 1 {
 		t.Fatalf("expected 1 drift (prod only), got %d", len(drifts))
 	}
-	if drifts[0].Workspace.Name != "prod" {
-		t.Errorf("expected drift in 'prod', got %q", drifts[0].Workspace.Name)
+	if drifts[0].Stack.Name != "prod" {
+		t.Errorf("expected drift in 'prod', got %q", drifts[0].Stack.Name)
 	}
 }
 
 func TestDetect_init_error(t *testing.T) {
-	cfg := testConfig(config.Workspace{Name: "prod", Path: "./prod"})
+	cfg := testConfig(config.Stack{Name: "prod", Path: "./prod"})
 	d := newDetectorWithMock(cfg, &mockPlanner{
 		initErr: errors.New("backend unreachable"),
 	})
@@ -122,7 +122,7 @@ func TestDetect_init_error(t *testing.T) {
 }
 
 func TestDetect_plan_error(t *testing.T) {
-	cfg := testConfig(config.Workspace{Name: "prod", Path: "./prod"})
+	cfg := testConfig(config.Stack{Name: "prod", Path: "./prod"})
 	d := newDetectorWithMock(cfg, &mockPlanner{
 		planErr: errors.New("provider error"),
 	})
@@ -134,7 +134,7 @@ func TestDetect_plan_error(t *testing.T) {
 }
 
 func TestDetect_detected_at_is_utc(t *testing.T) {
-	cfg := testConfig(config.Workspace{Name: "prod", Path: "./prod"})
+	cfg := testConfig(config.Stack{Name: "prod", Path: "./prod"})
 	d := newDetectorWithMock(cfg, &mockPlanner{
 		result: &terraform.PlanResult{HasChanges: true},
 	})

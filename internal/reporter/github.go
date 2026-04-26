@@ -46,8 +46,8 @@ func NewGitHub(cfg config.GitHub) (*GitHub, error) {
 
 // CreateDriftPR creates a branch with a drift report file and opens a PR.
 func (g *GitHub) CreateDriftPR(ctx context.Context, d detector.DriftResult) (*PRResult, error) {
-	branch := branchName(d.Workspace.Name, d.DetectedAt)
-	filename := reportFilename(d.Workspace.Name, d.DetectedAt)
+	branch := branchName(d.Stack.Name, d.DetectedAt)
+	filename := reportFilename(d.Stack.Name, d.DetectedAt)
 	content := reportFileContent(d)
 
 	baseSHA, err := g.getBaseSHA(ctx)
@@ -89,7 +89,7 @@ func (g *GitHub) createBranch(ctx context.Context, branch, sha string) error {
 }
 
 func (g *GitHub) createFile(ctx context.Context, branch, filename, content string, d detector.DriftResult) error {
-	msg := fmt.Sprintf("chore: drift report for %s at %s", d.Workspace.Name, d.DetectedAt.Format("2006-01-02 15:04:05 UTC"))
+	msg := fmt.Sprintf("chore: drift report for %s at %s", d.Stack.Name, d.DetectedAt.Format("2006-01-02 15:04:05 UTC"))
 	opts := &gogithub.RepositoryContentFileOptions{
 		Message: ptr(msg),
 		Content: []byte(content),
@@ -100,7 +100,7 @@ func (g *GitHub) createFile(ctx context.Context, branch, filename, content strin
 }
 
 func (g *GitHub) openPR(ctx context.Context, branch string, d detector.DriftResult) (*PRResult, error) {
-	title := prTitle(d.Workspace.Name)
+	title := prTitle(d.Stack.Name)
 	body := prBody(d)
 
 	newPR := &gogithub.NewPullRequest{

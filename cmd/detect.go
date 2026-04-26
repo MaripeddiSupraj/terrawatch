@@ -17,8 +17,8 @@ var dryRun bool
 
 var detectCmd = &cobra.Command{
 	Use:   "detect",
-	Short: "Detect drift across all configured workspaces",
-	Long: `Runs terraform plan on each configured workspace.
+	Short: "Detect drift across all configured stacks",
+	Long: `Runs terraform plan on each configured stack.
 If drift is detected, a pull request is opened on GitHub with the plan output.
 
 Use --dry-run to print detected drift without opening a PR.`,
@@ -39,36 +39,36 @@ func runDetect(_ *cobra.Command, _ []string) error {
 		return fmt.Errorf("load config: %w", err)
 	}
 
-	out.ScanStart(len(cfg.Workspaces))
+	out.ScanStart(len(cfg.Stacks))
 
 	var drifts []detector.DriftResult
 	errs := 0
 	clean := 0
 
-	for _, ws := range cfg.Workspaces {
-		stop := out.WorkspaceScanning(ws.Name)
+	for _, ws := range cfg.Stacks {
+		stop := out.StackScanning(ws.Name)
 
 		d := detector.New(cfg)
 		results, err := d.DetectOne(ws)
 		stop()
 
 		if err != nil {
-			out.WorkspaceError(ws.Name, err)
+			out.StackError(ws.Name, err)
 			errs++
 			continue
 		}
 
 		if results == nil {
-			out.WorkspaceClean(ws.Name)
+			out.StackClean(ws.Name)
 			clean++
 		} else {
-			out.WorkspaceDrift(ws.Name, results.Plan.Summary)
+			out.StackDrift(ws.Name, results.Plan.Summary)
 			drifts = append(drifts, *results)
 		}
 	}
 
 	out.Divider()
-	out.Summary(len(cfg.Workspaces), len(drifts), clean, errs)
+	out.Summary(len(cfg.Stacks), len(drifts), clean, errs)
 
 	if len(drifts) == 0 {
 		out.NoDrift()
@@ -90,10 +90,10 @@ func runDetect(_ *cobra.Command, _ []string) error {
 	for _, drift := range drifts {
 		pr, err := gh.CreateDriftPR(ctx, drift)
 		if err != nil {
-			out.PRError(drift.Workspace.Name, err)
+			out.PRError(drift.Stack.Name, err)
 			continue
 		}
-		out.PROpened(drift.Workspace.Name, pr.URL)
+		out.PROpened(drift.Stack.Name, pr.URL)
 	}
 
 	fmt.Fprintln(os.Stdout)

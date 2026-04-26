@@ -1,4 +1,4 @@
-workspaces:
+stacks:
   - name: production
     path: ./environments/prod
     vars_file: prod.tfvars        # optional

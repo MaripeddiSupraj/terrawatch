@@ -20,7 +20,7 @@ func writeTemp(t *testing.T, content string) string {
 }
 
 const validYAML = `
-workspaces:
+stacks:
   - name: production
     path: ./environments/prod
     vars_file: prod.tfvars
@@ -39,11 +39,11 @@ func TestLoad_valid(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if len(cfg.Workspaces) != 1 {
-		t.Fatalf("expected 1 workspace, got %d", len(cfg.Workspaces))
+	if len(cfg.Stacks) != 1 {
+		t.Fatalf("expected 1 stack, got %d", len(cfg.Stacks))
 	}
-	if cfg.Workspaces[0].Name != "production" {
-		t.Errorf("expected workspace name 'production', got %q", cfg.Workspaces[0].Name)
+	if cfg.Stacks[0].Name != "production" {
+		t.Errorf("expected stack name 'production', got %q", cfg.Stacks[0].Name)
 	}
 	if cfg.GitHub.Repo != "org/repo" {
 		t.Errorf("expected repo 'org/repo', got %q", cfg.GitHub.Repo)
@@ -55,7 +55,7 @@ func TestLoad_valid(t *testing.T) {
 
 func TestLoad_default_base_branch(t *testing.T) {
 	yaml := `
-workspaces:
+stacks:
   - name: dev
     path: ./dev
 github:
@@ -74,7 +74,7 @@ github:
 func TestLoad_github_token_from_env(t *testing.T) {
 	t.Setenv("GITHUB_TOKEN", "env-token-xyz")
 	yaml := `
-workspaces:
+stacks:
   - name: dev
     path: ./dev
 github:
@@ -89,7 +89,7 @@ github:
 	}
 }
 
-func TestLoad_missing_workspaces(t *testing.T) {
+func TestLoad_missing_stacks(t *testing.T) {
 	yaml := `
 github:
   token: tok
@@ -97,13 +97,13 @@ github:
 `
 	_, err := Load(writeTemp(t, yaml))
 	if err == nil {
-		t.Fatal("expected error for missing workspaces")
+		t.Fatal("expected error for missing stacks")
 	}
 }
 
 func TestLoad_missing_repo(t *testing.T) {
 	yaml := `
-workspaces:
+stacks:
   - name: dev
     path: ./dev
 github:
@@ -118,7 +118,7 @@ github:
 func TestLoad_missing_token(t *testing.T) {
 	os.Unsetenv("GITHUB_TOKEN")
 	yaml := `
-workspaces:
+stacks:
   - name: dev
     path: ./dev
 github:
@@ -130,9 +130,9 @@ github:
 	}
 }
 
-func TestLoad_workspace_missing_path(t *testing.T) {
+func TestLoad_stack_missing_path(t *testing.T) {
 	yaml := `
-workspaces:
+stacks:
   - name: dev
 github:
   token: tok
@@ -140,7 +140,7 @@ github:
 `
 	_, err := Load(writeTemp(t, yaml))
 	if err == nil {
-		t.Fatal("expected error for workspace missing path")
+		t.Fatal("expected error for stack missing path")
 	}
 }
 

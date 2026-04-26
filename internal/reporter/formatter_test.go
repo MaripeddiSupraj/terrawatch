@@ -21,8 +21,8 @@ func TestBranchName(t *testing.T) {
 }
 
 func TestBranchName_special_chars(t *testing.T) {
-	got := branchName("my-workspace", fixedTime)
-	if !strings.HasPrefix(got, "drift/my-workspace-") {
+	got := branchName("my-stack", fixedTime)
+	if !strings.HasPrefix(got, "drift/my-stack-") {
 		t.Errorf("branchName %q missing expected prefix", got)
 	}
 }
@@ -37,7 +37,7 @@ func TestReportFilename(t *testing.T) {
 
 func TestPrTitle(t *testing.T) {
 	got := prTitle("production")
-	want := "[terrawatch] Drift detected in workspace: production"
+	want := "[terrawatch] Drift detected in stack: production"
 	if got != want {
 		t.Errorf("prTitle = %q, want %q", got, want)
 	}
@@ -45,7 +45,7 @@ func TestPrTitle(t *testing.T) {
 
 func makeDriftResult() detector.DriftResult {
 	return detector.DriftResult{
-		Workspace: config.Workspace{Name: "production", Path: "./environments/prod"},
+		Stack: config.Stack{Name: "production", Path: "./environments/prod"},
 		Plan: &terraform.PlanResult{
 			HasChanges: true,
 			Output:     "~ aws_instance.web",
@@ -55,17 +55,17 @@ func makeDriftResult() detector.DriftResult {
 	}
 }
 
-func TestPrBody_contains_workspace(t *testing.T) {
+func TestPrBody_contains_stack(t *testing.T) {
 	body := prBody(makeDriftResult())
 	if !strings.Contains(body, "production") {
-		t.Error("PR body missing workspace name")
+		t.Error("PR body missing stack name")
 	}
 }
 
 func TestPrBody_contains_path(t *testing.T) {
 	body := prBody(makeDriftResult())
 	if !strings.Contains(body, "./environments/prod") {
-		t.Error("PR body missing workspace path")
+		t.Error("PR body missing stack path")
 	}
 }
 

@@ -9,12 +9,12 @@ import (
 )
 
 type Config struct {
-	Workspaces []Workspace `mapstructure:"workspaces"`
+	Stacks []Stack `mapstructure:"stacks"`
 	GitHub     GitHub      `mapstructure:"github"`
 	Terraform  Terraform   `mapstructure:"terraform"`
 }
 
-type Workspace struct {
+type Stack struct {
 	Name          string            `mapstructure:"name"`
 	Path          string            `mapstructure:"path"`
 	VarsFile      string            `mapstructure:"vars_file"`
@@ -62,15 +62,15 @@ func Load(path string) (*Config, error) {
 }
 
 func validate(cfg *Config) error {
-	if len(cfg.Workspaces) == 0 {
-		return fmt.Errorf("config: at least one workspace is required")
+	if len(cfg.Stacks) == 0 {
+		return fmt.Errorf("config: at least one stack is required")
 	}
-	for _, ws := range cfg.Workspaces {
+	for _, ws := range cfg.Stacks {
 		if ws.Name == "" {
-			return fmt.Errorf("config: workspace name is required")
+			return fmt.Errorf("config: stack name is required")
 		}
 		if ws.Path == "" {
-			return fmt.Errorf("config: workspace %q path is required", ws.Name)
+			return fmt.Errorf("config: stack %q path is required", ws.Name)
 		}
 	}
 	if cfg.GitHub.Repo == "" {

@@ -18,7 +18,7 @@ var (
 var rootCmd = &cobra.Command{
 	Use:   "terrawatch",
 	Short: "Detect Terraform infrastructure drift and open a pull request",
-	Long: `terrawatch watches your Terraform workspaces for infrastructure drift.
+	Long: `terrawatch watches your Terraform stacks for infrastructure drift.
 When drift is detected it automatically opens a pull request so your team
 can review and reconcile the change.`,
 }

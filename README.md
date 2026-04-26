@@ -48,7 +48,7 @@ go install github.com/MaripeddiSupraj/terrawatch@latest
 
 ```yaml
 # terrawatch.yaml
-workspaces:
+stacks:
   - name: production
     path: ./environments/prod
     vars_file: prod.tfvars     # optional
@@ -136,8 +136,8 @@ Plan
 ## Configuration reference
 
 ```yaml
-workspaces:
-  - name: string           # required — workspace label
+stacks:
+  - name: string           # required — stack label
     path: string           # required — path to terraform root module
     vars_file: string      # optional — .tfvars file
     backend_config:        # optional — key/value backend overrides

@@ -30,6 +30,7 @@ jobs:
         uses: hashicorp/setup-terraform@v3
         with:
           terraform_version: "~1.9"
+          terraform_wrapper: false  # wrapper swallows exit codes; we need real exit codes for drift detection
 
       - name: Build terrawatch
         run: go build -o terrawatch .
@@ -48,7 +49,7 @@ jobs:
       - name: Write terrawatch config
         run: |
           cat > terrawatch-test.yaml <<EOF
-          workspaces:
+          stacks:
             - name: test-workspace
               path: ./testdata/workspace
               vars_file: terraform.tfvars
