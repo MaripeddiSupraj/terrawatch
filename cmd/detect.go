@@ -10,6 +10,7 @@ import (
 	"github.com/MaripeddiSupraj/terrawatch/internal/config"
 	"github.com/MaripeddiSupraj/terrawatch/internal/detector"
 	"github.com/MaripeddiSupraj/terrawatch/internal/reporter"
+	"github.com/MaripeddiSupraj/terrawatch/internal/ui"
 )
 
 var dryRun bool
@@ -29,34 +30,53 @@ func init() {
 	rootCmd.AddCommand(detectCmd)
 }
 
-func runDetect(cmd *cobra.Command, _ []string) error {
+func runDetect(_ *cobra.Command, _ []string) error {
+	out := ui.New()
+	out.Header(buildVersion)
+
 	cfg, err := config.Load(cfgFile)
 	if err != nil {
 		return fmt.Errorf("load config: %w", err)
 	}
 
-	d := detector.New(cfg)
+	out.ScanStart(len(cfg.Workspaces))
 
-	fmt.Fprintf(cmd.OutOrStdout(), "Scanning %d workspace(s) for drift...\n", len(cfg.Workspaces))
+	var drifts []detector.DriftResult
+	errs := 0
+	clean := 0
 
-	drifts, err := d.Detect()
-	if err != nil {
-		return err
+	for _, ws := range cfg.Workspaces {
+		stop := out.WorkspaceScanning(ws.Name)
+
+		d := detector.New(cfg)
+		results, err := d.DetectOne(ws)
+		stop()
+
+		if err != nil {
+			out.WorkspaceError(ws.Name, err)
+			errs++
+			continue
+		}
+
+		if results == nil {
+			out.WorkspaceClean(ws.Name)
+			clean++
+		} else {
+			out.WorkspaceDrift(ws.Name, results.Plan.Summary)
+			drifts = append(drifts, *results)
+		}
 	}
 
+	out.Divider()
+	out.Summary(len(cfg.Workspaces), len(drifts), clean, errs)
+
 	if len(drifts) == 0 {
-		fmt.Fprintln(cmd.OutOrStdout(), "No drift detected.")
+		out.NoDrift()
 		return nil
 	}
 
-	fmt.Fprintf(cmd.OutOrStdout(), "Drift detected in %d workspace(s).\n\n", len(drifts))
-
 	if dryRun {
-		for _, drift := range drifts {
-			s := drift.Plan.Summary
-			fmt.Fprintf(cmd.OutOrStdout(), "  workspace: %s  (+%d ~%d -%d)\n",
-				drift.Workspace.Name, s.Add, s.Change, s.Destroy)
-		}
+		fmt.Fprintln(os.Stdout)
 		return nil
 	}
 
@@ -65,15 +85,17 @@ func runDetect(cmd *cobra.Command, _ []string) error {
 		return fmt.Errorf("github client: %w", err)
 	}
 
+	out.PRStart()
 	ctx := context.Background()
 	for _, drift := range drifts {
 		pr, err := gh.CreateDriftPR(ctx, drift)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "  [error] %s: %v\n", drift.Workspace.Name, err)
+			out.PRError(drift.Workspace.Name, err)
 			continue
 		}
-		fmt.Fprintf(cmd.OutOrStdout(), "  PR opened: %s\n", pr.URL)
+		out.PROpened(drift.Workspace.Name, pr.URL)
 	}
 
+	fmt.Fprintln(os.Stdout)
 	return nil
 }

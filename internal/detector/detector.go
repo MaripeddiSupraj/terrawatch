@@ -45,6 +45,11 @@ func (d *Detector) Detect() ([]DriftResult, error) {
 	return drifts, nil
 }
 
+// DetectOne checks a single workspace and returns nil if no drift.
+func (d *Detector) DetectOne(ws config.Workspace) (*DriftResult, error) {
+	return d.checkWorkspace(ws)
+}
+
 func (d *Detector) checkWorkspace(ws config.Workspace) (*DriftResult, error) {
 	runner := d.plannerFunc(ws)
 
