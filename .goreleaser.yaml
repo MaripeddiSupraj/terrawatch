@@ -70,6 +70,24 @@ brews:
     homepage: https://github.com/MaripeddiSupraj/terrawatch
     description: Detect Terraform infrastructure drift and automatically open a pull request
     license: MIT
+    caveats: |
+      ╔══════════════════════════════════════════════════════╗
+      ║          terrawatch installed successfully!          ║
+      ║                                                      ║
+      ║  Detect Terraform drift. Open a PR automatically.   ║
+      ╚══════════════════════════════════════════════════════╝
+
+      Get started:
+
+        1. Create a config file:
+             cp $(brew --prefix)/opt/terrawatch/terrawatch.example.yaml terrawatch.yaml
+
+        2. Edit terrawatch.yaml with your stacks and GitHub repo
+
+        3. Run drift detection:
+             terrawatch detect --config terrawatch.yaml
+
+      Docs: https://github.com/MaripeddiSupraj/terrawatch
     test: |
       system "#{bin}/terrawatch --help"
     install: |
