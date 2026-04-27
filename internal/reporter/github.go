@@ -45,12 +45,14 @@ func NewGitHub(cfg config.GitHub) (*GitHub, error) {
 	}, nil
 }
 
-// CreateDriftPR creates a PR for drift, or returns the existing open one if found.
+// CreateDriftPR creates a PR for drift, or comments on the existing open one.
 func (g *GitHub) CreateDriftPR(ctx context.Context, d detector.DriftResult) (*PRResult, error) {
 	// check for an already-open drift PR for this stack
 	if existing, err := g.findExistingDriftPR(ctx, d.Stack.Name); err != nil {
 		return nil, fmt.Errorf("check existing PRs: %w", err)
 	} else if existing != nil {
+		// post an updated plan as a comment so reviewers see the latest state
+		_ = g.addComment(ctx, existing.Number, commentBody(d))
 		return existing, nil
 	}
 
@@ -130,6 +132,12 @@ func (g *GitHub) createFile(ctx context.Context, branch, filename, content strin
 		Branch:  ptr(branch),
 	}
 	_, _, err := g.client.Repositories.CreateFile(ctx, g.owner, g.repo, filename, opts)
+	return err
+}
+
+func (g *GitHub) addComment(ctx context.Context, prNumber int, body string) error {
+	comment := &gogithub.IssueComment{Body: ptr(body)}
+	_, _, err := g.client.Issues.CreateComment(ctx, g.owner, g.repo, prNumber, comment)
 	return err
 }
 

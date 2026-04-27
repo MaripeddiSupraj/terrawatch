@@ -33,9 +33,9 @@ func prBody(d detector.DriftResult) string {
 	b.WriteString(fmt.Sprintf("| Add | Change | Destroy |\n|-----|--------|---------|\n| %d | %d | %d |\n\n", s.Add, s.Change, s.Destroy))
 
 	b.WriteString("### Plan\n\n")
-	b.WriteString("<details>\n<summary>Click to expand</summary>\n\n")
-	b.WriteString("```hcl\n")
-	b.WriteString(d.Plan.Output)
+	b.WriteString("<details>\n<summary>Click to expand full diff</summary>\n\n")
+	b.WriteString("```diff\n")
+	b.WriteString(planAsDiff(d.Plan.Output))
 	b.WriteString("\n```\n\n</details>\n\n")
 
 	b.WriteString("---\n")
@@ -46,4 +46,50 @@ func prBody(d detector.DriftResult) string {
 
 func reportFileContent(d detector.DriftResult) string {
 	return prBody(d)
+}
+
+// planAsDiff maps terraform plan symbols so GitHub diff syntax highlights them:
+//
+//	lines starting with "+" → green
+//	lines starting with "-" → red
+//	lines starting with "~" → prefixed with "-/+" so both colors appear
+func planAsDiff(output string) string {
+	lines := strings.Split(output, "\n")
+	out := make([]string, 0, len(lines))
+	for _, line := range lines {
+		trimmed := strings.TrimLeft(line, " ")
+		switch {
+		case strings.HasPrefix(trimmed, "+ ") || strings.HasPrefix(trimmed, "+\""):
+			out = append(out, line)
+		case strings.HasPrefix(trimmed, "- ") || strings.HasPrefix(trimmed, "-\""):
+			out = append(out, line)
+		case strings.HasPrefix(trimmed, "~ "):
+			// show update lines as removed-then-added so diff coloring makes sense
+			out = append(out, "- "+strings.TrimPrefix(trimmed, "~ "))
+			out = append(out, "+ "+strings.TrimPrefix(trimmed, "~ "))
+		default:
+			out = append(out, line)
+		}
+	}
+	return strings.Join(out, "\n")
+}
+
+// commentBody builds the comment posted to an existing drift PR on re-detection.
+func commentBody(d detector.DriftResult) string {
+	s := d.Plan.Summary
+	var b strings.Builder
+
+	b.WriteString("### Drift still present\n\n")
+	b.WriteString(fmt.Sprintf("terrawatch re-checked **%s** at %s and drift is still detected.\n\n",
+		d.Stack.Name, d.DetectedAt.Format(time.RFC1123)))
+
+	b.WriteString(fmt.Sprintf("| Add | Change | Destroy |\n|-----|--------|---------|\n| %d | %d | %d |\n\n",
+		s.Add, s.Change, s.Destroy))
+
+	b.WriteString("<details>\n<summary>Updated plan diff</summary>\n\n")
+	b.WriteString("```diff\n")
+	b.WriteString(planAsDiff(d.Plan.Output))
+	b.WriteString("\n```\n\n</details>\n")
+
+	return b.String()
 }

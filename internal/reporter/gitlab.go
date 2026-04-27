@@ -28,11 +28,12 @@ func NewGitLab(cfg config.GitLab) (*GitLab, error) {
 	return &GitLab{client: client, project: cfg.Repo, cfg: cfg}, nil
 }
 
-// CreateDriftPR creates a GitLab MR for drift, or returns the existing open one.
+// CreateDriftPR creates a GitLab MR for drift, or comments on the existing open one.
 func (g *GitLab) CreateDriftPR(ctx context.Context, d detector.DriftResult) (*PRResult, error) {
 	if existing, err := g.findExistingMR(d.Stack.Name); err != nil {
 		return nil, fmt.Errorf("check existing MRs: %w", err)
 	} else if existing != nil {
+		_ = g.addMRComment(existing.Number, commentBody(d))
 		return existing, nil
 	}
 
@@ -121,6 +122,13 @@ func (g *GitLab) openMR(branch string, d detector.DriftResult) (*PRResult, error
 		return nil, err
 	}
 	return &PRResult{URL: mr.WebURL, Number: int(mr.IID)}, nil
+}
+
+func (g *GitLab) addMRComment(mrIID int, body string) error {
+	_, _, err := g.client.Notes.CreateMergeRequestNote(g.project, int64(mrIID), &gl.CreateMergeRequestNoteOptions{
+		Body: &body,
+	})
+	return err
 }
 
 func (g *GitLab) resolveUserIDs(usernames []string) ([]int64, error) {
