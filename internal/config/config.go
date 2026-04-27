@@ -3,6 +3,7 @@ package config
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/spf13/viper"
@@ -41,6 +42,32 @@ type GitLab struct {
 
 type Terraform struct {
 	BinPath string `mapstructure:"bin_path"`
+}
+
+// LocalConfig builds a minimal config from a directory that contains .tf files,
+// with no reporter — used when terrawatch is run without a config file.
+func LocalConfig(dir string) *Config {
+	name := filepath.Base(dir)
+	if name == "." || name == "" {
+		name = "current"
+	}
+	return &Config{
+		Stacks: []Stack{{Name: name, Path: dir}},
+	}
+}
+
+// HasTerraformFiles reports whether dir contains at least one .tf file.
+func HasTerraformFiles(dir string) bool {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return false
+	}
+	for _, e := range entries {
+		if !e.IsDir() && filepath.Ext(e.Name()) == ".tf" {
+			return true
+		}
+	}
+	return false
 }
 
 func Load(path string) (*Config, error) {

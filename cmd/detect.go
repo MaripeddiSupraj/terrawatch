@@ -30,15 +30,31 @@ func init() {
 	rootCmd.AddCommand(detectCmd)
 }
 
-func runDetect(_ *cobra.Command, _ []string) error {
+func runDetect(cmd *cobra.Command, _ []string) error {
 	out := ui.New()
 	out.Header(buildVersion)
 
+	localMode := false
 	cfg, err := config.Load(cfgFile)
 	if err != nil {
-		return fmt.Errorf("load config: %w", err)
+		// fall back to local mode if no explicit --config and cwd has .tf files
+		if !cmd.Flags().Changed("config") {
+			cwd, _ := os.Getwd()
+			if config.HasTerraformFiles(cwd) {
+				cfg = config.LocalConfig(cwd)
+				localMode = true
+				dryRun = true
+			} else {
+				return fmt.Errorf("load config: %w", err)
+			}
+		} else {
+			return fmt.Errorf("load config: %w", err)
+		}
 	}
 
+	if localMode {
+		out.LocalMode()
+	}
 	out.ScanStart(len(cfg.Stacks))
 
 	var drifts []detector.DriftResult

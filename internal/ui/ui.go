@@ -53,6 +53,10 @@ func (u *UI) Header(version string) {
 	fmt.Fprintln(u.out)
 }
 
+func (u *UI) LocalMode() {
+	dim.Fprintf(u.out, "  no config file found — running in local mode (dry-run)\n\n")
+}
+
 func (u *UI) ScanStart(total int) {
 	fmt.Fprintf(u.out, "  Scanning %d stack(s)\n\n", total)
 }
