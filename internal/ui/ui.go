@@ -53,8 +53,12 @@ func (u *UI) Header(version string) {
 	fmt.Fprintln(u.out)
 }
 
-func (u *UI) LocalMode() {
-	dim.Fprintf(u.out, "  no config file found — running in local mode (dry-run)\n\n")
+func (u *UI) LocalMode(recursive bool) {
+	msg := "no config file — local mode (dry-run)"
+	if recursive {
+		msg = "no config file — local mode, recursive scan (dry-run)"
+	}
+	dim.Fprintf(u.out, "  %s\n\n", msg)
 }
 
 func (u *UI) ScanStart(total int) {

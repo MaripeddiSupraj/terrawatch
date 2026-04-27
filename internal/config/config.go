@@ -44,16 +44,22 @@ type Terraform struct {
 	BinPath string `mapstructure:"bin_path"`
 }
 
-// LocalConfig builds a minimal config from a directory that contains .tf files,
+// LocalConfigFromDirs builds a minimal config from one or more directories,
 // with no reporter — used when terrawatch is run without a config file.
-func LocalConfig(dir string) *Config {
-	name := filepath.Base(dir)
-	if name == "." || name == "" {
-		name = "current"
+func LocalConfigFromDirs(dirs []string) *Config {
+	var stacks []Stack
+	for _, dir := range dirs {
+		name := filepath.Base(dir)
+		if name == "." || name == "" {
+			name = "current"
+		}
+		abs, err := filepath.Abs(dir)
+		if err != nil {
+			abs = dir
+		}
+		stacks = append(stacks, Stack{Name: name, Path: abs})
 	}
-	return &Config{
-		Stacks: []Stack{{Name: name, Path: dir}},
-	}
+	return &Config{Stacks: stacks}
 }
 
 // HasTerraformFiles reports whether dir contains at least one .tf file.
@@ -68,6 +74,29 @@ func HasTerraformFiles(dir string) bool {
 		}
 	}
 	return false
+}
+
+// FindTerraformDirs walks root and returns all directories that contain .tf files.
+func FindTerraformDirs(root string) ([]string, error) {
+	var dirs []string
+	seen := map[string]bool{}
+	err := filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
+		if err != nil {
+			return nil
+		}
+		if d.IsDir() && (d.Name() == ".terraform" || d.Name() == ".git") {
+			return filepath.SkipDir
+		}
+		if !d.IsDir() && filepath.Ext(d.Name()) == ".tf" {
+			parent := filepath.Dir(path)
+			if !seen[parent] {
+				seen[parent] = true
+				dirs = append(dirs, parent)
+			}
+		}
+		return nil
+	})
+	return dirs, err
 }
 
 func Load(path string) (*Config, error) {
