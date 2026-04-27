@@ -64,7 +64,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          OUTPUT=$(./terrawatch detect --config terrawatch-test.yaml --dry-run)
+          OUTPUT=$(./terrawatch detect --config terrawatch-test.yaml --dry-run 2>&1 || true)
           echo "$OUTPUT"
           if ! echo "$OUTPUT" | grep -q "drift detected"; then
             echo "FAIL: expected drift to be detected"
