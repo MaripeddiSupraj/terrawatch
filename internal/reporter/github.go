@@ -51,8 +51,10 @@ func (g *GitHub) CreateDriftPR(ctx context.Context, d detector.DriftResult) (*PR
 	if existing, err := g.findExistingDriftPR(ctx, d.Stack.Name); err != nil {
 		return nil, fmt.Errorf("check existing PRs: %w", err)
 	} else if existing != nil {
-		// post an updated plan as a comment so reviewers see the latest state
-		_ = g.addComment(ctx, existing.Number, commentBody(d))
+		// only comment if the last comment is not already from terrawatch
+		if already, _ := g.lastCommentIsTerrawatch(ctx, existing.Number); !already {
+			_ = g.addComment(ctx, existing.Number, commentBody(d))
+		}
 		return existing, nil
 	}
 
@@ -133,6 +135,20 @@ func (g *GitHub) createFile(ctx context.Context, branch, filename, content strin
 	}
 	_, _, err := g.client.Repositories.CreateFile(ctx, g.owner, g.repo, filename, opts)
 	return err
+}
+
+// lastCommentIsTerrawatch returns true if the most recent comment on the PR
+// was already posted by terrawatch — so we don't spam on every run.
+func (g *GitHub) lastCommentIsTerrawatch(ctx context.Context, prNumber int) (bool, error) {
+	opts := &gogithub.IssueListCommentsOptions{
+		Direction:   ptr("desc"),
+		ListOptions: gogithub.ListOptions{PerPage: 1},
+	}
+	comments, _, err := g.client.Issues.ListComments(ctx, g.owner, g.repo, prNumber, opts)
+	if err != nil || len(comments) == 0 {
+		return false, err
+	}
+	return strings.Contains(comments[0].GetBody(), "### Drift still present"), nil
 }
 
 func (g *GitHub) addComment(ctx context.Context, prNumber int, body string) error {

@@ -33,7 +33,9 @@ func (g *GitLab) CreateDriftPR(ctx context.Context, d detector.DriftResult) (*PR
 	if existing, err := g.findExistingMR(d.Stack.Name); err != nil {
 		return nil, fmt.Errorf("check existing MRs: %w", err)
 	} else if existing != nil {
-		_ = g.addMRComment(existing.Number, commentBody(d))
+		if already, _ := g.lastCommentIsTerrawatch(existing.Number); !already {
+			_ = g.addMRComment(existing.Number, commentBody(d))
+		}
 		return existing, nil
 	}
 
@@ -122,6 +124,19 @@ func (g *GitLab) openMR(branch string, d detector.DriftResult) (*PRResult, error
 		return nil, err
 	}
 	return &PRResult{URL: mr.WebURL, Number: int(mr.IID)}, nil
+}
+
+func (g *GitLab) lastCommentIsTerrawatch(mrIID int) (bool, error) {
+	opts := &gl.ListMergeRequestNotesOptions{
+		OrderBy: gl.Ptr("created_at"),
+		Sort:    gl.Ptr("desc"),
+		ListOptions: gl.ListOptions{PerPage: 1},
+	}
+	notes, _, err := g.client.Notes.ListMergeRequestNotes(g.project, int64(mrIID), opts)
+	if err != nil || len(notes) == 0 {
+		return false, err
+	}
+	return strings.Contains(notes[0].Body, "### Drift still present"), nil
 }
 
 func (g *GitLab) addMRComment(mrIID int, body string) error {
