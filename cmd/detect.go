@@ -11,17 +11,19 @@ import (
 	"github.com/MaripeddiSupraj/terrawatch/internal/detector"
 	"github.com/MaripeddiSupraj/terrawatch/internal/reporter"
 	"github.com/MaripeddiSupraj/terrawatch/internal/ui"
+	"github.com/MaripeddiSupraj/terrawatch/pkg/terraform"
 )
 
 var (
 	dryRun    bool
 	recursive bool
+	binPath   string
 )
 
 var detectCmd = &cobra.Command{
 	Use:   "detect [dir...]",
-	Short: "Detect Terraform drift",
-	Long: `Runs terraform plan to detect infrastructure drift.
+	Short: "Detect Terraform/OpenTofu drift",
+	Long: `Runs terraform (or tofu) plan to detect infrastructure drift.
 
 Without arguments, checks the current directory.
 Pass one or more directories to check specific stacks.
@@ -30,16 +32,34 @@ Use -recursive to walk all subdirectories.
 If a config file is found, it is used for full mode (PR creation).
 Otherwise terrawatch runs in local mode: drift is printed, no PR is opened.
 
-Exit codes:
+The binary is auto-detected: terraform first, then tofu (OpenTofu).
+Override with --bin or terraform.bin_path in the config file.
+
+Exit codes (mirrors terraform plan -detailed-exitcode):
   0  no drift detected
-  1  drift detected or error`,
+  1  error
+  2  drift detected`,
 	RunE: runDetect,
 }
 
 func init() {
 	detectCmd.Flags().BoolVar(&dryRun, "dry-run", false, "print drift without opening a PR/MR")
 	detectCmd.Flags().BoolVarP(&recursive, "recursive", "r", false, "recursively scan subdirectories for Terraform stacks")
+	detectCmd.Flags().StringVar(&binPath, "bin", "", "terraform/tofu binary to use (default: auto-detect)")
 	rootCmd.AddCommand(detectCmd)
+}
+
+// exitCodeFor mirrors terraform plan -detailed-exitcode:
+// errors win over drift so CI can tell an outage from real drift.
+func exitCodeFor(drifted, errs int) int {
+	switch {
+	case errs > 0:
+		return 1
+	case drifted > 0:
+		return 2
+	default:
+		return 0
+	}
 }
 
 func runDetect(cmd *cobra.Command, args []string) error {
@@ -68,6 +88,18 @@ func runDetect(cmd *cobra.Command, args []string) error {
 	if localMode {
 		out.LocalMode(recursive)
 	}
+
+	// --bin flag wins over config; otherwise auto-detect terraform/tofu
+	if binPath != "" {
+		cfg.Terraform.BinPath = binPath
+	}
+	resolved, err := terraform.ResolveBinPath(cfg.Terraform.BinPath)
+	if err != nil {
+		return err
+	}
+	cfg.Terraform.BinPath = resolved
+	out.Binary(resolved, terraform.IsOpenTofu(resolved))
+
 	out.ScanStart(len(cfg.Stacks))
 
 	var drifts []detector.DriftResult
@@ -102,12 +134,7 @@ func runDetect(cmd *cobra.Command, args []string) error {
 		return nil
 	}
 
-	if len(drifts) > 0 && dryRun {
-		fmt.Fprintln(os.Stdout)
-		os.Exit(1)
-	}
-
-	if len(drifts) > 0 {
+	if len(drifts) > 0 && !dryRun {
 		r, err := buildReporter(cfg)
 		if err != nil {
 			return err
@@ -119,18 +146,15 @@ func runDetect(cmd *cobra.Command, args []string) error {
 			pr, err := r.CreateDriftPR(ctx, drift)
 			if err != nil {
 				out.PRError(drift.Stack.Name, err)
+				errs++
 				continue
 			}
 			out.PROpened(drift.Stack.Name, pr.URL, pr.Existing)
 		}
-		fmt.Fprintln(os.Stdout)
-		os.Exit(1)
 	}
 
-	if errs > 0 {
-		os.Exit(1)
-	}
-
+	fmt.Fprintln(os.Stdout)
+	os.Exit(exitCodeFor(len(drifts), errs))
 	return nil
 }
 

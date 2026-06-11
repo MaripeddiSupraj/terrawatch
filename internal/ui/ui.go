@@ -61,6 +61,14 @@ func (u *UI) LocalMode(recursive bool) {
 	dim.Fprintf(u.out, "  %s\n\n", msg)
 }
 
+func (u *UI) Binary(binPath string, isOpenTofu bool) {
+	label := binPath
+	if isOpenTofu {
+		label += " (OpenTofu)"
+	}
+	dim.Fprintf(u.out, "  engine: %s\n\n", label)
+}
+
 func (u *UI) ScanStart(total int) {
 	fmt.Fprintf(u.out, "  Scanning %d stack(s)\n\n", total)
 }

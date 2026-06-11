@@ -50,6 +50,28 @@ func New(binPath, workingDir string) *Runner {
 	return &Runner{binPath: binPath, workingDir: workingDir}
 }
 
+// ResolveBinPath returns the IaC binary to use. A configured path wins;
+// otherwise the first of terraform/tofu found on PATH is used.
+func ResolveBinPath(configured string) (string, error) {
+	if configured != "" {
+		if _, err := exec.LookPath(configured); err != nil {
+			return "", fmt.Errorf("configured binary %q not found: %w", configured, err)
+		}
+		return configured, nil
+	}
+	for _, candidate := range []string{"terraform", "tofu"} {
+		if _, err := exec.LookPath(candidate); err == nil {
+			return candidate, nil
+		}
+	}
+	return "", fmt.Errorf("neither terraform nor tofu (OpenTofu) found on PATH — install one or set terraform.bin_path")
+}
+
+// IsOpenTofu reports whether the binary is OpenTofu rather than Terraform.
+func IsOpenTofu(binPath string) bool {
+	return filepath.Base(binPath) == "tofu"
+}
+
 func (r *Runner) Init() error {
 	_, err := r.run("init", "-input=false", "-no-color")
 	return err
