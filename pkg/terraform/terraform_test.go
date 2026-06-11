@@ -51,7 +51,7 @@ func TestParseSummaryJSON_changes(t *testing.T) {
 			{"change": {"actions": ["delete"]}}
 		]
 	}`
-	s, err := ParseSummaryJSON(json)
+	s, _, err := ParseSummaryJSON(json)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -68,7 +68,7 @@ func TestParseSummaryJSON_changes(t *testing.T) {
 
 func TestParseSummaryJSON_no_changes(t *testing.T) {
 	json := `{"resource_changes": []}`
-	s, err := ParseSummaryJSON(json)
+	s, _, err := ParseSummaryJSON(json)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -78,7 +78,7 @@ func TestParseSummaryJSON_no_changes(t *testing.T) {
 }
 
 func TestParseSummaryJSON_invalid_json(t *testing.T) {
-	_, err := ParseSummaryJSON("not json")
+	_, _, err := ParseSummaryJSON("not json")
 	if err == nil {
 		t.Fatal("expected error for invalid JSON")
 	}
@@ -91,7 +91,7 @@ func TestParseSummaryJSON_no_op_action(t *testing.T) {
 			{"change": {"actions": ["no-op"]}}
 		]
 	}`
-	s, err := ParseSummaryJSON(json)
+	s, _, err := ParseSummaryJSON(json)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}

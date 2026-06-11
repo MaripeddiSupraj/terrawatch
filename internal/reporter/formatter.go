@@ -29,6 +29,10 @@ func prBody(d detector.DriftResult) string {
 	b.WriteString(fmt.Sprintf("**Path:** `%s`\n", d.Stack.Path))
 	b.WriteString(fmt.Sprintf("**Detected at:** %s\n\n", d.DetectedAt.Format(time.RFC1123)))
 
+	if d.HiddenChanges > 0 {
+		b.WriteString(fmt.Sprintf("> **%d change(s) hidden by ignore rules.**\n\n", d.HiddenChanges))
+	}
+
 	b.WriteString("### Summary\n\n")
 	b.WriteString(fmt.Sprintf("| Add | Change | Destroy |\n|-----|--------|---------|\n| %d | %d | %d |\n\n", s.Add, s.Change, s.Destroy))
 
@@ -83,13 +87,17 @@ func commentBody(d detector.DriftResult) string {
 	b.WriteString(fmt.Sprintf("terrawatch re-checked **%s** at %s and drift is still detected.\n\n",
 		d.Stack.Name, d.DetectedAt.Format(time.RFC1123)))
 
+	if d.HiddenChanges > 0 {
+		b.WriteString(fmt.Sprintf("> **%d change(s) hidden by ignore rules.**\n\n", d.HiddenChanges))
+	}
+
 	b.WriteString(fmt.Sprintf("| Add | Change | Destroy |\n|-----|--------|---------|\n| %d | %d | %d |\n\n",
 		s.Add, s.Change, s.Destroy))
 
 	b.WriteString("<details>\n<summary>Updated plan diff</summary>\n\n")
 	b.WriteString("```diff\n")
 	b.WriteString(planAsDiff(d.Plan.Output))
-	b.WriteString("\n```\n\n</details>\n")
+	b.WriteString("\n```\n</details>\n")
 
 	return b.String()
 }

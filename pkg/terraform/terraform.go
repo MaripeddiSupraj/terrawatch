@@ -21,9 +21,10 @@ type Runner struct {
 }
 
 type PlanResult struct {
-	HasChanges bool
-	Output     string
-	Summary    Summary
+	HasChanges      bool
+	Output          string
+	Summary         Summary
+	ResourceChanges []ResourceChange
 }
 
 type Summary struct {
@@ -32,14 +33,25 @@ type Summary struct {
 	Destroy int
 }
 
+// ResourceChange is a parsed representation of a single terraform resource change.
+type ResourceChange struct {
+	Address string
+	Actions []string
+	Before  map[string]any
+	After   map[string]any
+}
+
 // planJSON is the minimal subset of `terraform show -json` we need
 type planJSON struct {
 	ResourceChanges []resourceChange `json:"resource_changes"`
 }
 
 type resourceChange struct {
-	Change struct {
-		Actions []string `json:"actions"`
+	Address string `json:"address"`
+	Change  struct {
+		Actions []string       `json:"actions"`
+		Before  map[string]any `json:"before"`
+		After   map[string]any `json:"after"`
 	} `json:"change"`
 }
 
@@ -77,33 +89,35 @@ func (r *Runner) Plan(varsFile string) (*PlanResult, error) {
 		if showErr != nil {
 			return nil, fmt.Errorf("terraform show: %w", showErr)
 		}
-		summary, summaryErr := r.parseSummary(planName)
+		summary, changes, summaryErr := r.parseSummary(planName)
 		if summaryErr != nil {
 			// non-fatal — best effort
 			summary = &Summary{}
+			changes = nil
 		}
-		return &PlanResult{HasChanges: true, Output: showOut, Summary: *summary}, nil
+		return &PlanResult{HasChanges: true, Output: showOut, Summary: *summary, ResourceChanges: changes}, nil
 	default:
 		return nil, fmt.Errorf("terraform plan failed (exit %d): %s", exitCode, out)
 	}
 }
 
-func (r *Runner) parseSummary(planName string) (*Summary, error) {
+func (r *Runner) parseSummary(planName string) (*Summary, []ResourceChange, error) {
 	out, err := r.run("show", "-json", planName)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	return ParseSummaryJSON(out)
 }
 
-// ParseSummaryJSON parses a terraform show -json output into a Summary.
-func ParseSummaryJSON(jsonStr string) (*Summary, error) {
+// ParseSummaryJSON parses terraform show -json output into a Summary and ResourceChanges.
+func ParseSummaryJSON(jsonStr string) (*Summary, []ResourceChange, error) {
 	var p planJSON
 	if err := json.Unmarshal([]byte(jsonStr), &p); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	s := &Summary{}
-	for _, rc := range p.ResourceChanges {
+	changes := make([]ResourceChange, len(p.ResourceChanges))
+	for i, rc := range p.ResourceChanges {
 		for _, a := range rc.Change.Actions {
 			switch a {
 			case "create":
@@ -114,8 +128,14 @@ func ParseSummaryJSON(jsonStr string) (*Summary, error) {
 				s.Destroy++
 			}
 		}
+		changes[i] = ResourceChange{
+			Address: rc.Address,
+			Actions: rc.Change.Actions,
+			Before:  rc.Change.Before,
+			After:   rc.Change.After,
+		}
 	}
-	return s, nil
+	return s, changes, nil
 }
 
 func (r *Runner) run(args ...string) (string, error) {
