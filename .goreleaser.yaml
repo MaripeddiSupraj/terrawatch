@@ -60,13 +60,14 @@ release:
   draft: false
   prerelease: auto
 
-brews:
+# goreleaser v2.10+ replaced `brews` (formulas) with `homebrew_casks`
+homebrew_casks:
   - name: terrawatch
     repository:
       owner: MaripeddiSupraj
       name: homebrew-terrawatch
       token: "{{ .Env.HOMEBREW_TAP_TOKEN }}"
-    directory: Formula
+    directory: Casks
     homepage: https://github.com/MaripeddiSupraj/terrawatch
     description: Detect Terraform infrastructure drift and automatically open a pull request
     license: MIT
@@ -79,8 +80,9 @@ brews:
 
       Get started:
 
-        1. Create a config file:
-             cp $(brew --prefix)/opt/terrawatch/terrawatch.example.yaml terrawatch.yaml
+        1. Grab the example config:
+             curl -O https://raw.githubusercontent.com/MaripeddiSupraj/terrawatch/main/terrawatch.example.yaml
+             mv terrawatch.example.yaml terrawatch.yaml
 
         2. Edit terrawatch.yaml with your stacks and GitHub repo
 
@@ -88,7 +90,10 @@ brews:
              terrawatch detect --config terrawatch.yaml
 
       Docs: https://github.com/MaripeddiSupraj/terrawatch
-    test: |
-      system "#{bin}/terrawatch --help"
-    install: |
-      bin.install "terrawatch"
+    # unsigned binary — strip the quarantine attribute so macOS will run it
+    hooks:
+      post:
+        install: |
+          if system_command("/usr/bin/xattr", args: ["-h"]).exit_status == 0
+            system_command "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "#{staged_path}/terrawatch"]
+          end
