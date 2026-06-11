@@ -82,10 +82,13 @@ func TestResolveBinPath_none_found(t *testing.T) {
 
 func TestIsOpenTofu(t *testing.T) {
 	cases := map[string]bool{
-		"tofu":                true,
-		"/usr/local/bin/tofu": true,
-		"terraform":           false,
-		"/opt/bin/terraform":  false,
+		"tofu":                   true,
+		"/usr/local/bin/tofu":    true,
+		`tofu.exe`:               true,
+		"terraform":              false,
+		"/opt/bin/terraform":     false,
+		`terraform.exe`:          false,
+		`C:\tools\terraform.exe`: false,
 	}
 	for bin, want := range cases {
 		if got := IsOpenTofu(bin); got != want {

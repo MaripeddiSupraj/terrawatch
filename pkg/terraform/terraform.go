@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 )
 
 // Planner is implemented by Runner and can be substituted in tests.
@@ -69,7 +70,8 @@ func ResolveBinPath(configured string) (string, error) {
 
 // IsOpenTofu reports whether the binary is OpenTofu rather than Terraform.
 func IsOpenTofu(binPath string) bool {
-	return filepath.Base(binPath) == "tofu"
+	base := filepath.Base(binPath)
+	return strings.TrimSuffix(base, filepath.Ext(base)) == "tofu"
 }
 
 func (r *Runner) Init() error {
