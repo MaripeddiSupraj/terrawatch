@@ -17,9 +17,14 @@ type Result struct {
 }
 
 // Apply filters a set of resource changes against global and per-stack ignore rules.
-// Rules are merged: stack rules are appended to global rules.
+// Rules are merged: stack rules are appended to global rules. All rules matching a
+// resource combine — a whole-resource rule (no attributes) drops it outright, and
+// attribute rules contribute the union of their ignored attribute paths.
 func Apply(changes []terraform.ResourceChange, globalRules, stackRules []config.IgnoreRule) Result {
-	rules := append(globalRules, stackRules...)
+	// copy to avoid appending into globalRules' backing array
+	rules := make([]config.IgnoreRule, 0, len(globalRules)+len(stackRules))
+	rules = append(rules, globalRules...)
+	rules = append(rules, stackRules...)
 	if len(rules) == 0 {
 		return Result{Changes: changes}
 	}
@@ -28,22 +33,23 @@ func Apply(changes []terraform.ResourceChange, globalRules, stackRules []config.
 	hidden := 0
 
 	for _, ch := range changes {
-		rule, matched := matchRule(ch.Address, rules)
-		if !matched {
-			filtered = append(filtered, ch)
-			continue
-		}
+		ignoreWhole, attrs := matchRules(ch.Address, rules)
 
-		if len(rule.Attributes) == 0 {
+		if ignoreWhole {
 			hidden += countActions(ch.Actions)
 			continue
 		}
 
-		// Check if removing the specified attributes makes before == after.
+		if len(attrs) == 0 {
+			filtered = append(filtered, ch)
+			continue
+		}
+
+		// Check if removing the ignored attributes makes before == after.
 		before := deepCopyMap(ch.Before)
 		after := deepCopyMap(ch.After)
 
-		for _, attr := range rule.Attributes {
+		for _, attr := range attrs {
 			deleteNested(before, attr)
 			deleteNested(after, attr)
 		}
@@ -77,13 +83,27 @@ func ComputeSummary(changes []terraform.ResourceChange) terraform.Summary {
 	return s
 }
 
-func matchRule(address string, rules []config.IgnoreRule) (config.IgnoreRule, bool) {
+// matchRules evaluates every rule against the address. It returns
+// ignoreWhole=true if any matching rule has no attributes, otherwise the
+// union of attribute paths from all matching rules.
+func matchRules(address string, rules []config.IgnoreRule) (ignoreWhole bool, attrs []string) {
+	seen := map[string]bool{}
 	for _, r := range rules {
-		if ok, _ := path.Match(r.Resource, address); ok {
-			return r, true
+		ok, err := path.Match(r.Resource, address)
+		if err != nil || !ok {
+			continue
+		}
+		if len(r.Attributes) == 0 {
+			return true, nil
+		}
+		for _, a := range r.Attributes {
+			if !seen[a] {
+				seen[a] = true
+				attrs = append(attrs, a)
+			}
 		}
 	}
-	return config.IgnoreRule{}, false
+	return false, attrs
 }
 
 func countActions(actions []string) int {

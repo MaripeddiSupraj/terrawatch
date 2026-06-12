@@ -265,32 +265,93 @@ func TestDeleteNested_missing_intermediate(t *testing.T) {
 	deleteNested(m, "b.c")
 }
 
-func TestMatchRule_no_match(t *testing.T) {
+func TestMatchRules_no_match(t *testing.T) {
 	rules := []config.IgnoreRule{mkRule("aws_instance.*")}
-	_, matched := matchRule("aws_s3_bucket.data", rules)
-	if matched {
-		t.Error("expected no match")
+	whole, attrs := matchRules("aws_s3_bucket.data", rules)
+	if whole || len(attrs) != 0 {
+		t.Errorf("expected no match, got whole=%v attrs=%v", whole, attrs)
 	}
 }
 
-func TestMatchRule_exact_match(t *testing.T) {
+func TestMatchRules_whole_resource(t *testing.T) {
 	rules := []config.IgnoreRule{mkRule("aws_instance.web")}
-	_, matched := matchRule("aws_instance.web", rules)
-	if !matched {
-		t.Error("expected match")
+	whole, _ := matchRules("aws_instance.web", rules)
+	if !whole {
+		t.Error("expected whole-resource match")
 	}
 }
 
-func TestMatchRule_uses_first_rule(t *testing.T) {
+func TestMatchRules_unions_all_matching_rules(t *testing.T) {
 	rules := []config.IgnoreRule{
 		mkRule("aws_instance.web", "attr1"),
 		mkRule("*", "attr2"),
+		mkRule("aws_instance.*", "attr1"), // duplicate attr must not repeat
 	}
-	rule, matched := matchRule("aws_instance.web", rules)
-	if !matched {
-		t.Fatal("expected match")
+	whole, attrs := matchRules("aws_instance.web", rules)
+	if whole {
+		t.Fatal("expected attribute match, not whole-resource")
 	}
-	if len(rule.Attributes) != 1 || rule.Attributes[0] != "attr1" {
-		t.Errorf("expected first rule's attrs, got %v", rule.Attributes)
+	if len(attrs) != 2 || attrs[0] != "attr1" || attrs[1] != "attr2" {
+		t.Errorf("expected union [attr1 attr2], got %v", attrs)
+	}
+}
+
+func TestMatchRules_whole_resource_wins_over_attributes(t *testing.T) {
+	rules := []config.IgnoreRule{
+		mkRule("aws_instance.web", "attr1"),
+		mkRule("aws_instance.*"), // no attributes — whole resource
+	}
+	whole, _ := matchRules("aws_instance.web", rules)
+	if !whole {
+		t.Error("expected whole-resource rule to win")
+	}
+}
+
+func TestApply_combined_rules_neutralize_resource(t *testing.T) {
+	// regression: two diffs covered by two DIFFERENT rules must combine
+	before := map[string]any{
+		"desired_capacity": 3,
+		"tags_all":         map[string]any{"LastScanned": "2024-01-01"},
+		"name":             "web",
+	}
+	after := map[string]any{
+		"desired_capacity": 5,
+		"tags_all":         map[string]any{"LastScanned": "2024-06-01"},
+		"name":             "web",
+	}
+	changes := []terraform.ResourceChange{
+		mkChange("aws_autoscaling_group.web", []string{"update"}, before, after),
+	}
+	rules := []config.IgnoreRule{
+		{Resource: "*", Attributes: []string{"tags_all"}},
+		{Resource: "aws_autoscaling_group.*", Attributes: []string{"desired_capacity"}},
+	}
+	result := Apply(changes, rules, nil)
+
+	if len(result.Changes) != 0 {
+		t.Errorf("expected 0 changes (both rules combine), got %d", len(result.Changes))
+	}
+	if result.HiddenChanges != 1 {
+		t.Errorf("expected 1 hidden, got %d", result.HiddenChanges)
+	}
+}
+
+func TestApply_does_not_mutate_global_rules(t *testing.T) {
+	// regression: appending stack rules must not write into the global
+	// slice's backing array
+	global := make([]config.IgnoreRule, 1, 2)
+	global[0] = mkRule("aws_autoscaling_group.*")
+
+	changes := []terraform.ResourceChange{
+		mkChange("aws_instance.canary", []string{"update"}, nil, nil),
+	}
+
+	Apply(changes, global, []config.IgnoreRule{mkRule("aws_instance.canary")})
+	// second call with different stack rules — global must be unchanged
+	result := Apply(changes, global, nil)
+
+	if len(result.Changes) != 1 {
+		t.Errorf("global rules were mutated by a previous Apply call: got %d changes, want 1",
+			len(result.Changes))
 	}
 }

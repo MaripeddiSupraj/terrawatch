@@ -63,10 +63,14 @@ ignore:
 
 - **Without `attributes`**: the entire resource change is dropped.
 - **With `attributes`**: only those specific dot-paths are compared. If removing them makes `before == after`, the resource is reported clean.
+- **All matching rules combine**: a resource matched by several rules ignores the union of their attributes; a whole-resource rule always wins.
 - **Per-stack override**: add `ignore` inside a stack block — it is appended to the global list.
 
 When ignore rules hide changes, the PR body and terminal output show a count:
 `(3 changes hidden by ignore rules)`.
+
+Note: ignore rules decide whether a stack counts as drifted — the raw plan diff
+embedded in the PR is unmodified terraform output and still shows ignored attributes.
 
 Glob patterns use `path.Match` semantics: `*` matches any sequence of characters within a segment (dots are literal, not segment separators).
 

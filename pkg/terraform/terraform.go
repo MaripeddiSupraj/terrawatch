@@ -134,30 +134,39 @@ func (r *Runner) parseSummary(planName string) (*Summary, []ResourceChange, erro
 }
 
 // ParseSummaryJSON parses terraform show -json output into a Summary and ResourceChanges.
+// The plan JSON includes "no-op" and "read" entries for unchanged resources;
+// those are excluded so ResourceChanges only contains actionable changes.
 func ParseSummaryJSON(jsonStr string) (*Summary, []ResourceChange, error) {
 	var p planJSON
 	if err := json.Unmarshal([]byte(jsonStr), &p); err != nil {
 		return nil, nil, err
 	}
 	s := &Summary{}
-	changes := make([]ResourceChange, len(p.ResourceChanges))
-	for i, rc := range p.ResourceChanges {
+	var changes []ResourceChange
+	for _, rc := range p.ResourceChanges {
+		actionable := false
 		for _, a := range rc.Change.Actions {
 			switch a {
 			case "create":
 				s.Add++
+				actionable = true
 			case "update":
 				s.Change++
+				actionable = true
 			case "delete":
 				s.Destroy++
+				actionable = true
 			}
 		}
-		changes[i] = ResourceChange{
+		if !actionable {
+			continue
+		}
+		changes = append(changes, ResourceChange{
 			Address: rc.Address,
 			Actions: rc.Change.Actions,
 			Before:  rc.Change.Before,
 			After:   rc.Change.After,
-		}
+		})
 	}
 	return s, changes, nil
 }
