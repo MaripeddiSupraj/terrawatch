@@ -29,6 +29,13 @@ func prBody(d detector.DriftResult) string {
 	b.WriteString(fmt.Sprintf("**Path:** `%s`\n", d.Stack.Path))
 	b.WriteString(fmt.Sprintf("**Detected at:** %s\n\n", d.DetectedAt.Format(time.RFC1123)))
 
+	switch d.Kind {
+	case detector.KindInfraDrift:
+		b.WriteString("> ⚠️ **Real infrastructure drift** — live resources differ from terraform state.\n\n")
+	case detector.KindUnappliedChanges:
+		b.WriteString("> ℹ️ **Unapplied code changes** — the cloud matches state, but merged code was never applied.\n\n")
+	}
+
 	if d.HiddenChanges > 0 {
 		b.WriteString(fmt.Sprintf("> **%d change(s) hidden by ignore rules.**\n\n", d.HiddenChanges))
 	}
@@ -76,6 +83,13 @@ func planAsDiff(output string) string {
 		}
 	}
 	return strings.Join(out, "\n")
+}
+
+// resolvedCommentBody is posted to a drift PR just before auto-closing it.
+func resolvedCommentBody(stackName string, t time.Time) string {
+	return fmt.Sprintf(
+		"### ✅ Drift resolved\n\nterrawatch re-checked **%s** at %s and found no drift — closing this PR automatically.\n",
+		stackName, t.Format(time.RFC1123))
 }
 
 // commentBody builds the comment posted to an existing drift PR on re-detection.

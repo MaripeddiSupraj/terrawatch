@@ -9,24 +9,45 @@ import (
 	"github.com/MaripeddiSupraj/terrawatch/pkg/terraform"
 )
 
+// Kind classifies what a detected change actually is.
+type Kind string
+
+const (
+	// KindUnclassified means classification was not requested.
+	KindUnclassified Kind = ""
+	// KindInfraDrift means live infrastructure differs from state —
+	// someone or something changed the cloud outside terraform.
+	KindInfraDrift Kind = "infra_drift"
+	// KindUnappliedChanges means the plan changes come from code that was
+	// merged but never applied — the cloud still matches the state.
+	KindUnappliedChanges Kind = "unapplied_changes"
+)
+
 type DriftResult struct {
 	Stack         config.Stack
 	Plan          *terraform.PlanResult
 	DetectedAt    time.Time
 	HiddenChanges int
+	Kind          Kind
 }
 
 type Detector struct {
 	cfg         *config.Config
 	plannerFunc func(ws config.Stack) terraform.Planner
+	// Classify runs an extra refresh-only plan per drifted stack to
+	// distinguish real infra drift from unapplied code changes. It is
+	// enabled by drift_mode: strict or the --classify flag.
+	Classify bool
 }
 
 func New(cfg *config.Config) *Detector {
+	timeout := cfg.TerraformTimeout(terraform.DefaultTimeout)
 	return &Detector{
 		cfg: cfg,
 		plannerFunc: func(ws config.Stack) terraform.Planner {
-			return terraform.New(cfg.Terraform.BinPath, ws.Path)
+			return terraform.New(cfg.Terraform.BinPath, ws.Path).WithTimeout(timeout)
 		},
+		Classify: cfg.DriftMode == config.DriftModeStrict,
 	}
 }
 
@@ -86,10 +107,24 @@ func (d *Detector) checkStack(ws config.Stack) (*DriftResult, error) {
 		return nil, nil
 	}
 
+	kind := KindUnclassified
+	if d.Classify {
+		refresh, err := runner.PlanRefreshOnly(ws.VarsFile)
+		if err != nil {
+			return nil, fmt.Errorf("refresh-only plan failed: %w", err)
+		}
+		if refresh.HasChanges {
+			kind = KindInfraDrift
+		} else {
+			kind = KindUnappliedChanges
+		}
+	}
+
 	return &DriftResult{
 		Stack:         ws,
 		Plan:          plan,
 		DetectedAt:    time.Now().UTC(),
 		HiddenChanges: hidden,
+		Kind:          kind,
 	}, nil
 }

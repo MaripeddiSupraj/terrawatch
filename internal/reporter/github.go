@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"time"
 
 	gogithub "github.com/google/go-github/v62/github"
 	"golang.org/x/oauth2"
@@ -11,6 +12,8 @@ import (
 	"github.com/MaripeddiSupraj/terrawatch/internal/config"
 	"github.com/MaripeddiSupraj/terrawatch/internal/detector"
 )
+
+func timeNowUTC() time.Time { return time.Now().UTC() }
 
 type GitHub struct {
 	client *gogithub.Client
@@ -22,7 +25,8 @@ type GitHub struct {
 type PRResult struct {
 	URL      string
 	Number   int
-	Existing bool // true if PR already existed
+	Existing bool   // true if PR already existed
+	HeadRef  string // source branch of the PR, used for cleanup on close
 }
 
 func ptr[T any](v T) *T { return &v }
@@ -79,6 +83,41 @@ func (g *GitHub) CreateDriftPR(ctx context.Context, d detector.DriftResult) (*PR
 	return pr, nil
 }
 
+// CloseResolvedDriftPR closes the open drift PR for a clean stack, commenting
+// first and deleting the drift branch. Returns (nil, nil) if no PR is open.
+func (g *GitHub) CloseResolvedDriftPR(ctx context.Context, stackName string) (*PRResult, error) {
+	existing, err := g.findExistingDriftPR(ctx, stackName)
+	if err != nil {
+		return nil, fmt.Errorf("check existing PRs: %w", err)
+	}
+	if existing == nil {
+		return nil, nil
+	}
+
+	_ = g.addComment(ctx, existing.Number, resolvedCommentBody(stackName, timeNowUTC()))
+
+	closed := "closed"
+	if _, _, err := g.client.PullRequests.Edit(ctx, g.owner, g.repo, existing.Number,
+		&gogithub.PullRequest{State: &closed}); err != nil {
+		return nil, fmt.Errorf("close PR #%d: %w", existing.Number, err)
+	}
+
+	if existing.HeadRef != "" {
+		// best effort — a deleted branch must never fail the run
+		_, _ = g.client.Git.DeleteRef(ctx, g.owner, g.repo, "refs/heads/"+existing.HeadRef)
+	}
+
+	return existing, nil
+}
+
+// ValidateAuth makes one cheap authenticated call to verify the token works.
+func (g *GitHub) ValidateAuth(ctx context.Context) error {
+	if _, _, err := g.client.Repositories.Get(ctx, g.owner, g.repo); err != nil {
+		return fmt.Errorf("github auth check failed for %s/%s: %w", g.owner, g.repo, err)
+	}
+	return nil
+}
+
 // findExistingDriftPR searches open PRs for one already tracking this stack.
 func (g *GitHub) findExistingDriftPR(ctx context.Context, stackName string) (*PRResult, error) {
 	opts := &gogithub.PullRequestListOptions{
@@ -98,6 +137,7 @@ func (g *GitHub) findExistingDriftPR(ctx context.Context, stackName string) (*PR
 					URL:      pr.GetHTMLURL(),
 					Number:   pr.GetNumber(),
 					Existing: true,
+					HeadRef:  pr.GetHead().GetRef(),
 				}, nil
 			}
 		}

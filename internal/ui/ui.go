@@ -18,11 +18,13 @@ var (
 	yellow = color.New(color.FgYellow, color.Bold)
 	red    = color.New(color.FgRed, color.Bold)
 	cyan   = color.New(color.FgCyan, color.Bold)
+	blue   = color.New(color.FgBlue, color.Bold)
 	bold   = color.New(color.Bold)
 	dim    = color.New(color.Faint)
 
 	checkMark = green.Sprint("✓")
 	warnMark  = yellow.Sprint("⚠")
+	infoMark  = blue.Sprint("ℹ")
 	crossMark = red.Sprint("✗")
 	arrow     = cyan.Sprint("→")
 )
@@ -30,6 +32,7 @@ var (
 type UI struct {
 	out     io.Writer
 	isTTY   bool
+	quiet   bool
 	spinner *spinner.Spinner
 }
 
@@ -47,13 +50,32 @@ func New() *UI {
 	return u
 }
 
+// SetWriter redirects human output (used to keep stdout pure in JSON mode).
+func (u *UI) SetWriter(w io.Writer) {
+	u.out = w
+}
+
+// SetQuiet suppresses informational output. Errors are still printed.
+func (u *UI) SetQuiet(quiet bool) {
+	u.quiet = quiet
+	if quiet {
+		u.spinner = nil
+	}
+}
+
 func (u *UI) Header(version string) {
+	if u.quiet {
+		return
+	}
 	fmt.Fprintln(u.out)
 	cyan.Fprintf(u.out, "  terrawatch %s\n", version)
 	fmt.Fprintln(u.out)
 }
 
 func (u *UI) LocalMode(recursive bool) {
+	if u.quiet {
+		return
+	}
 	msg := "no config file — local mode (dry-run)"
 	if recursive {
 		msg = "no config file — local mode, recursive scan (dry-run)"
@@ -62,6 +84,9 @@ func (u *UI) LocalMode(recursive bool) {
 }
 
 func (u *UI) Binary(binPath string, isOpenTofu bool) {
+	if u.quiet {
+		return
+	}
 	label := binPath
 	if isOpenTofu {
 		label += " (OpenTofu)"
@@ -70,10 +95,16 @@ func (u *UI) Binary(binPath string, isOpenTofu bool) {
 }
 
 func (u *UI) ScanStart(total int) {
+	if u.quiet {
+		return
+	}
 	fmt.Fprintf(u.out, "  Scanning %d stack(s)\n\n", total)
 }
 
 func (u *UI) StackScanning(name string) func() {
+	if u.quiet {
+		return func() {}
+	}
 	if u.isTTY && u.spinner != nil {
 		u.spinner.Suffix = fmt.Sprintf("  %s", dim.Sprintf("%-20s scanning...", name))
 		u.spinner.Start()
@@ -84,10 +115,20 @@ func (u *UI) StackScanning(name string) func() {
 }
 
 func (u *UI) StackClean(name string) {
+	if u.quiet {
+		return
+	}
 	fmt.Fprintf(u.out, "  %s  %-20s %s\n", checkMark, bold.Sprint(name), dim.Sprint("no drift"))
 }
 
-func (u *UI) StackDrift(name string, s terraform.Summary, hidden int) {
+func (u *UI) StackDrift(name string, s terraform.Summary, hidden int, infraDrift bool) {
+	if u.quiet {
+		return
+	}
+	label := "drift detected"
+	if infraDrift {
+		label = "infra drift"
+	}
 	summary := yellow.Sprintf("+%d ~%d -%d", s.Add, s.Change, s.Destroy)
 	extra := ""
 	if hidden > 0 {
@@ -96,9 +137,24 @@ func (u *UI) StackDrift(name string, s terraform.Summary, hidden int) {
 	fmt.Fprintf(u.out, "  %s  %-20s %s  %s%s\n",
 		warnMark,
 		bold.Sprint(name),
-		yellow.Sprint("drift detected"),
+		yellow.Sprint(label),
 		summary,
 		extra,
+	)
+}
+
+// StackUnapplied reports plan changes that come from merged-but-unapplied
+// code rather than real infrastructure drift (strict mode only).
+func (u *UI) StackUnapplied(name string, s terraform.Summary) {
+	if u.quiet {
+		return
+	}
+	summary := dim.Sprintf("+%d ~%d -%d", s.Add, s.Change, s.Destroy)
+	fmt.Fprintf(u.out, "  %s  %-20s %s  %s\n",
+		infoMark,
+		bold.Sprint(name),
+		blue.Sprint("unapplied changes"),
+		summary,
 	)
 }
 
@@ -111,10 +167,16 @@ func (u *UI) StackError(name string, err error) {
 }
 
 func (u *UI) Divider() {
+	if u.quiet {
+		return
+	}
 	dim.Fprintln(u.out, "\n  "+repeat("─", 50))
 }
 
 func (u *UI) Summary(scanned, drifted, clean, errs int) {
+	if u.quiet {
+		return
+	}
 	fmt.Fprintf(u.out, "  %s scanned  %s  %s drifted  %s  %s clean",
 		bold.Sprint(scanned),
 		dim.Sprint("·"),
@@ -129,11 +191,17 @@ func (u *UI) Summary(scanned, drifted, clean, errs int) {
 }
 
 func (u *UI) PRStart() {
+	if u.quiet {
+		return
+	}
 	fmt.Fprintln(u.out)
 	fmt.Fprintf(u.out, "  Opening pull requests...\n\n")
 }
 
 func (u *UI) PROpened(name, url string, existing bool) {
+	if u.quiet {
+		return
+	}
 	label := dim.Sprint("PR opened")
 	if existing {
 		label = dim.Sprint("PR exists")
@@ -147,6 +215,20 @@ func (u *UI) PROpened(name, url string, existing bool) {
 	)
 }
 
+// PRClosed reports a drift PR that was auto-closed because the stack is clean.
+func (u *UI) PRClosed(name, url string) {
+	if u.quiet {
+		return
+	}
+	fmt.Fprintf(u.out, "  %s  %-20s %s  %s  %s\n",
+		checkMark,
+		bold.Sprint(name),
+		dim.Sprint("drift resolved — PR closed"),
+		arrow,
+		color.New(color.FgCyan, color.Underline).Sprint(url),
+	)
+}
+
 func (u *UI) PRError(name string, err error) {
 	fmt.Fprintf(u.out, "  %s  %-20s %s\n",
 		crossMark,
@@ -155,7 +237,19 @@ func (u *UI) PRError(name string, err error) {
 	)
 }
 
+// Warn prints a non-fatal warning that never affects the exit code.
+func (u *UI) Warn(name string, err error) {
+	fmt.Fprintf(u.out, "  %s  %-20s %s\n",
+		warnMark,
+		bold.Sprint(name),
+		yellow.Sprintf("warning: %v", err),
+	)
+}
+
 func (u *UI) NoDrift() {
+	if u.quiet {
+		return
+	}
 	fmt.Fprintln(u.out)
 	fmt.Fprintf(u.out, "  %s  %s\n\n", checkMark, green.Sprint("All stacks are in sync."))
 }

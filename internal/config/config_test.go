@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 )
 
 func writeTemp(t *testing.T, content string) string {
@@ -148,5 +149,101 @@ func TestLoad_file_not_found(t *testing.T) {
 	_, err := Load(filepath.Join(t.TempDir(), "nonexistent.yaml"))
 	if err == nil {
 		t.Fatal("expected error for missing file")
+	}
+}
+
+func TestLoad_drift_mode_default_all(t *testing.T) {
+	yaml := `
+stacks:
+  - name: dev
+    path: ./dev
+github:
+  token: tok
+  repo: org/repo
+`
+	cfg, err := Load(writeTemp(t, yaml))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.DriftMode != DriftModeAll {
+		t.Errorf("expected default drift_mode %q, got %q", DriftModeAll, cfg.DriftMode)
+	}
+}
+
+func TestLoad_drift_mode_strict(t *testing.T) {
+	yaml := `
+drift_mode: strict
+stacks:
+  - name: dev
+    path: ./dev
+github:
+  token: tok
+  repo: org/repo
+`
+	cfg, err := Load(writeTemp(t, yaml))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.DriftMode != DriftModeStrict {
+		t.Errorf("expected strict, got %q", cfg.DriftMode)
+	}
+}
+
+func TestLoad_drift_mode_invalid(t *testing.T) {
+	yaml := `
+drift_mode: paranoid
+stacks:
+  - name: dev
+    path: ./dev
+github:
+  token: tok
+  repo: org/repo
+`
+	if _, err := Load(writeTemp(t, yaml)); err == nil {
+		t.Fatal("expected error for invalid drift_mode")
+	}
+}
+
+func TestAutoCloseEnabled_default_true(t *testing.T) {
+	cfg := &Config{}
+	if !cfg.AutoCloseEnabled() {
+		t.Error("auto_close must default to true")
+	}
+	f := false
+	cfg.AutoClose = &f
+	if cfg.AutoCloseEnabled() {
+		t.Error("auto_close: false must disable")
+	}
+}
+
+func TestLoad_terraform_timeout_invalid(t *testing.T) {
+	yaml := `
+stacks:
+  - name: dev
+    path: ./dev
+github:
+  token: tok
+  repo: org/repo
+terraform:
+  timeout: banana
+`
+	if _, err := Load(writeTemp(t, yaml)); err == nil {
+		t.Fatal("expected error for invalid timeout duration")
+	}
+}
+
+func TestTerraformTimeout(t *testing.T) {
+	def := 30 * time.Minute
+	cfg := &Config{}
+	if got := cfg.TerraformTimeout(def); got != def {
+		t.Errorf("unset timeout: expected default, got %v", got)
+	}
+	cfg.Terraform.Timeout = "10m"
+	if got := cfg.TerraformTimeout(def); got != 10*time.Minute {
+		t.Errorf("expected 10m, got %v", got)
+	}
+	cfg.Terraform.Timeout = "0"
+	if got := cfg.TerraformTimeout(def); got != 0 {
+		t.Errorf("expected 0 (disabled), got %v", got)
 	}
 }
