@@ -1,9 +1,101 @@
 package terraform
 
 import (
+	"os"
 	"os/exec"
+	"path/filepath"
+	"runtime"
 	"testing"
 )
+
+// fakeBin creates an executable file named name in dir.
+func fakeBin(t *testing.T, dir, name string) {
+	t.Helper()
+	path := filepath.Join(dir, name)
+	if err := os.WriteFile(path, []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestResolveBinPath_configured(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("unix-only fake binaries")
+	}
+	dir := t.TempDir()
+	fakeBin(t, dir, "my-terraform")
+	got, err := ResolveBinPath(filepath.Join(dir, "my-terraform"))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got != filepath.Join(dir, "my-terraform") {
+		t.Errorf("expected configured path back, got %q", got)
+	}
+}
+
+func TestResolveBinPath_configured_missing(t *testing.T) {
+	_, err := ResolveBinPath("/nonexistent/terraform-xyz")
+	if err == nil {
+		t.Fatal("expected error for missing configured binary")
+	}
+}
+
+func TestResolveBinPath_prefers_terraform(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("unix-only fake binaries")
+	}
+	dir := t.TempDir()
+	fakeBin(t, dir, "terraform")
+	fakeBin(t, dir, "tofu")
+	t.Setenv("PATH", dir)
+	got, err := ResolveBinPath("")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got != "terraform" {
+		t.Errorf("expected terraform to win when both exist, got %q", got)
+	}
+}
+
+func TestResolveBinPath_falls_back_to_tofu(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("unix-only fake binaries")
+	}
+	dir := t.TempDir()
+	fakeBin(t, dir, "tofu")
+	t.Setenv("PATH", dir)
+	got, err := ResolveBinPath("")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got != "tofu" {
+		t.Errorf("expected tofu fallback, got %q", got)
+	}
+}
+
+func TestResolveBinPath_none_found(t *testing.T) {
+	t.Setenv("PATH", t.TempDir())
+	_, err := ResolveBinPath("")
+	if err == nil {
+		t.Fatal("expected error when neither terraform nor tofu is on PATH")
+	}
+}
+
+func TestIsOpenTofu(t *testing.T) {
+	cases := map[string]bool{
+		"tofu":                   true,
+		"/usr/local/bin/tofu":    true,
+		`tofu.exe`:               true,
+		"terraform":              false,
+		"/opt/bin/terraform":     false,
+		`terraform.exe`:          false,
+		`C:\tools\terraform.exe`: false,
+	}
+	for bin, want := range cases {
+		if got := IsOpenTofu(bin); got != want {
+			t.Errorf("IsOpenTofu(%q) = %v, want %v", bin, got, want)
+		}
+	}
+}
 
 func TestNew_default_bin_path(t *testing.T) {
 	r := New("", "/some/dir")

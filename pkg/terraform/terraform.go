@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 )
 
 // Planner is implemented by Runner and can be substituted in tests.
@@ -48,6 +49,29 @@ func New(binPath, workingDir string) *Runner {
 		binPath = "terraform"
 	}
 	return &Runner{binPath: binPath, workingDir: workingDir}
+}
+
+// ResolveBinPath returns the IaC binary to use. A configured path wins;
+// otherwise the first of terraform/tofu found on PATH is used.
+func ResolveBinPath(configured string) (string, error) {
+	if configured != "" {
+		if _, err := exec.LookPath(configured); err != nil {
+			return "", fmt.Errorf("configured binary %q not found: %w", configured, err)
+		}
+		return configured, nil
+	}
+	for _, candidate := range []string{"terraform", "tofu"} {
+		if _, err := exec.LookPath(candidate); err == nil {
+			return candidate, nil
+		}
+	}
+	return "", fmt.Errorf("neither terraform nor tofu (OpenTofu) found on PATH — install one or set terraform.bin_path")
+}
+
+// IsOpenTofu reports whether the binary is OpenTofu rather than Terraform.
+func IsOpenTofu(binPath string) bool {
+	base := filepath.Base(binPath)
+	return strings.TrimSuffix(base, filepath.Ext(base)) == "tofu"
 }
 
 func (r *Runner) Init() error {

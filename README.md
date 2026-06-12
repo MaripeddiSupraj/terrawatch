@@ -6,6 +6,8 @@ terrawatch runs `terraform plan` on your stacks on a schedule, and when real inf
 
 No servers. No Kubernetes. Drop it into any existing CI pipeline in minutes.
 
+Works with both **Terraform** and **OpenTofu** — the binary is auto-detected, no configuration needed.
+
 ---
 
 ## The problem it solves
@@ -92,12 +94,20 @@ Or scan everything at once:
 terrawatch detect --recursive ./infra
 ```
 
+Using OpenTofu? It just works — `tofu` is picked up automatically when `terraform` isn't installed, or force it explicitly:
+
+```bash
+terrawatch detect --bin tofu
+```
+
 Output:
 
 ```
   terrawatch v0.1.0
 
   no config file — local mode (dry-run)
+
+  engine: terraform
 
   Scanning 3 stack(s)
 
@@ -216,7 +226,7 @@ Run after `terraform apply` to confirm the apply fully converged:
 
 - name: Verify convergence
   run: terrawatch detect --dry-run --config terrawatch.yaml
-  # exits 1 if drift still present → fails the pipeline
+  # exits 2 if drift still present → fails the pipeline
 ```
 
 ### GitLab CI
@@ -241,20 +251,27 @@ terrawatch detect [dir...]        check current dir or specified paths
 terrawatch detect --recursive     walk all subdirs for terraform stacks
 terrawatch detect --dry-run       print drift, do not open a PR
 terrawatch detect --config        use a config file (enables PR creation)
+terrawatch detect --bin tofu      force a specific terraform/tofu binary
 terrawatch version                print version info
 ```
 
-**Exit codes:**
+**Exit codes** (mirrors `terraform plan -detailed-exitcode`):
 
 | Code | Meaning |
 |---|---|
 | `0` | No drift detected |
-| `1` | Drift found, or an error occurred |
+| `1` | Error (init/plan failed, PR creation failed) |
+| `2` | Drift detected |
 
-This makes it safe to use in scripts:
+So in CI you can tell a broken pipeline apart from real drift:
 
 ```bash
-terrawatch detect && echo "all clean" || pagerduty-alert
+terrawatch detect
+case $? in
+  0) echo "all clean" ;;
+  2) pagerduty-alert "infrastructure drift" ;;
+  *) pagerduty-alert "drift detection is broken" ;;
+esac
 ```
 
 ---
@@ -287,7 +304,7 @@ gitlab:
   assignees: []            # GitLab usernames
 
 terraform:
-  bin_path: terraform      # path to terraform binary if not on PATH
+  bin_path: tofu           # terraform/tofu binary — auto-detected if omitted
 ```
 
 ---
@@ -300,6 +317,7 @@ terraform:
 | Detects drift automatically | No | No | Yes |
 | Opens a PR/MR on drift | Yes (on PR only) | No | Yes |
 | GitHub + GitLab | GitHub only | No | Yes |
+| OpenTofu support | Partial | No | Yes (auto-detected) |
 | Stored cloud credentials | Yes | Yes | No (OIDC) |
 
 terrawatch is not trying to replace Atlantis. It fills the gap: **automatic drift detection with no infrastructure to run**.
