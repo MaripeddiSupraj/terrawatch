@@ -121,7 +121,7 @@ func runDetect(cmd *cobra.Command, args []string) error {
 			out.StackClean(s.Name)
 			clean++
 		} else {
-			out.StackDrift(s.Name, result.Plan.Summary)
+			out.StackDrift(s.Name, result.Plan.Summary, result.HiddenChanges)
 			drifts = append(drifts, *result)
 		}
 	}

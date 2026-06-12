@@ -143,7 +143,7 @@ func TestParseSummaryJSON_changes(t *testing.T) {
 			{"change": {"actions": ["delete"]}}
 		]
 	}`
-	s, err := ParseSummaryJSON(json)
+	s, _, err := ParseSummaryJSON(json)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -160,7 +160,7 @@ func TestParseSummaryJSON_changes(t *testing.T) {
 
 func TestParseSummaryJSON_no_changes(t *testing.T) {
 	json := `{"resource_changes": []}`
-	s, err := ParseSummaryJSON(json)
+	s, _, err := ParseSummaryJSON(json)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -170,7 +170,7 @@ func TestParseSummaryJSON_no_changes(t *testing.T) {
 }
 
 func TestParseSummaryJSON_invalid_json(t *testing.T) {
-	_, err := ParseSummaryJSON("not json")
+	_, _, err := ParseSummaryJSON("not json")
 	if err == nil {
 		t.Fatal("expected error for invalid JSON")
 	}
@@ -183,11 +183,37 @@ func TestParseSummaryJSON_no_op_action(t *testing.T) {
 			{"change": {"actions": ["no-op"]}}
 		]
 	}`
-	s, err := ParseSummaryJSON(json)
+	s, _, err := ParseSummaryJSON(json)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if s.Add != 0 || s.Change != 0 || s.Destroy != 0 {
 		t.Errorf("no-op should not count, got %+v", s)
+	}
+}
+
+func TestParseSummaryJSON_excludes_no_op_from_changes(t *testing.T) {
+	// regression: real plans include no-op entries for unchanged resources;
+	// they must not appear in ResourceChanges or drift detection breaks
+	// when all actionable changes are filtered by ignore rules
+	json := `{
+		"resource_changes": [
+			{"address": "aws_instance.unchanged", "change": {"actions": ["no-op"]}},
+			{"address": "data.aws_ami.latest", "change": {"actions": ["read"]}},
+			{"address": "aws_instance.drifted", "change": {"actions": ["update"]}}
+		]
+	}`
+	s, changes, err := ParseSummaryJSON(json)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(changes) != 1 {
+		t.Fatalf("expected 1 actionable change, got %d", len(changes))
+	}
+	if changes[0].Address != "aws_instance.drifted" {
+		t.Errorf("expected aws_instance.drifted, got %s", changes[0].Address)
+	}
+	if s.Change != 1 {
+		t.Errorf("expected Change=1, got %d", s.Change)
 	}
 }

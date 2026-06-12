@@ -5,13 +5,15 @@ import (
 	"time"
 
 	"github.com/MaripeddiSupraj/terrawatch/internal/config"
+	"github.com/MaripeddiSupraj/terrawatch/internal/driftfilter"
 	"github.com/MaripeddiSupraj/terrawatch/pkg/terraform"
 )
 
 type DriftResult struct {
-	Stack  config.Stack
-	Plan       *terraform.PlanResult
-	DetectedAt time.Time
+	Stack         config.Stack
+	Plan          *terraform.PlanResult
+	DetectedAt    time.Time
+	HiddenChanges int
 }
 
 type Detector struct {
@@ -66,9 +68,28 @@ func (d *Detector) checkStack(ws config.Stack) (*DriftResult, error) {
 		return nil, nil
 	}
 
+	// Apply ignore rules to reduce noise.
+	hidden := 0
+	if len(d.cfg.Ignore) > 0 || len(ws.Ignore) > 0 {
+		filtered := driftfilter.Apply(plan.ResourceChanges, d.cfg.Ignore, ws.Ignore)
+		hidden = filtered.HiddenChanges
+
+		if len(filtered.Changes) < len(plan.ResourceChanges) {
+			newSummary := driftfilter.ComputeSummary(filtered.Changes)
+			plan.Summary = newSummary
+			plan.ResourceChanges = filtered.Changes
+			plan.HasChanges = len(filtered.Changes) > 0
+		}
+	}
+
+	if !plan.HasChanges {
+		return nil, nil
+	}
+
 	return &DriftResult{
-		Stack:  ws,
-		Plan:       plan,
-		DetectedAt: time.Now().UTC(),
+		Stack:         ws,
+		Plan:          plan,
+		DetectedAt:    time.Now().UTC(),
+		HiddenChanges: hidden,
 	}, nil
 }

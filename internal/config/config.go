@@ -9,11 +9,23 @@ import (
 	"github.com/spf13/viper"
 )
 
+// IgnoreRule defines a rule for filtering out specific resource changes from drift detection.
+type IgnoreRule struct {
+	// Resource is a glob pattern matched against the resource address (e.g. "aws_autoscaling_group.*").
+	// Uses path.Match semantics: * matches any sequence within a segment.
+	Resource string `mapstructure:"resource"`
+	// Attributes is an optional list of dot-path attribute names to ignore.
+	// When empty, the entire resource is ignored. When set, only those specific attributes
+	// are ignored — if no other diffs remain, the resource is reported clean.
+	Attributes []string `mapstructure:"attributes"`
+}
+
 type Config struct {
-	Stacks    []Stack   `mapstructure:"stacks"`
-	GitHub    GitHub    `mapstructure:"github"`
-	GitLab    GitLab    `mapstructure:"gitlab"`
-	Terraform Terraform `mapstructure:"terraform"`
+	Ignore    []IgnoreRule `mapstructure:"ignore"`
+	Stacks    []Stack      `mapstructure:"stacks"`
+	GitHub    GitHub       `mapstructure:"github"`
+	GitLab    GitLab       `mapstructure:"gitlab"`
+	Terraform Terraform    `mapstructure:"terraform"`
 }
 
 type Stack struct {
@@ -21,6 +33,7 @@ type Stack struct {
 	Path          string            `mapstructure:"path"`
 	VarsFile      string            `mapstructure:"vars_file"`
 	BackendConfig map[string]string `mapstructure:"backend_config"`
+	Ignore        []IgnoreRule      `mapstructure:"ignore"`
 }
 
 type GitHub struct {

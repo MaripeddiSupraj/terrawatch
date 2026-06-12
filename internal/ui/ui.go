@@ -87,13 +87,18 @@ func (u *UI) StackClean(name string) {
 	fmt.Fprintf(u.out, "  %s  %-20s %s\n", checkMark, bold.Sprint(name), dim.Sprint("no drift"))
 }
 
-func (u *UI) StackDrift(name string, s terraform.Summary) {
+func (u *UI) StackDrift(name string, s terraform.Summary, hidden int) {
 	summary := yellow.Sprintf("+%d ~%d -%d", s.Add, s.Change, s.Destroy)
-	fmt.Fprintf(u.out, "  %s  %-20s %s  %s\n",
+	extra := ""
+	if hidden > 0 {
+		extra = dim.Sprintf(" (%d changes hidden by ignore rules)", hidden)
+	}
+	fmt.Fprintf(u.out, "  %s  %-20s %s  %s%s\n",
 		warnMark,
 		bold.Sprint(name),
 		yellow.Sprint("drift detected"),
 		summary,
+		extra,
 	)
 }
 

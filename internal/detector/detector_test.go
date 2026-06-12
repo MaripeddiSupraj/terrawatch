@@ -15,13 +15,13 @@ type mockPlanner struct {
 	planErr error
 }
 
-func (m *mockPlanner) Init() error                              { return m.initErr }
+func (m *mockPlanner) Init() error                                  { return m.initErr }
 func (m *mockPlanner) Plan(_ string) (*terraform.PlanResult, error) { return m.result, m.planErr }
 
 func testConfig(stacks ...config.Stack) *config.Config {
 	return &config.Config{
 		Stacks: stacks,
-		GitHub:     config.GitHub{Token: "tok", Repo: "org/repo", BaseBranch: "main"},
+		GitHub: config.GitHub{Token: "tok", Repo: "org/repo", BaseBranch: "main"},
 	}
 }
 

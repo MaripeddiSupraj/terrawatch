@@ -1,9 +1,24 @@
+# Ignore rules reduce noise by filtering out known false-drift.
+# Each rule has a glob pattern on the resource address and an optional
+# list of attribute dot-paths. With no attributes, the entire resource
+# is ignored. With attributes, those specific diffs are suppressed.
+# ignore:
+#   - resource: "aws_autoscaling_group.*"
+#     attributes: [desired_capacity]
+#   - resource: "*"
+#     attributes: [tags.LastScanned, tags_all]
+#   - resource: "null_resource.ephemeral_*"
+
+# Per-stack ignore rules are merged with (appended to) global rules.
 stacks:
   - name: production
     path: ./environments/prod
     vars_file: prod.tfvars        # optional
   - name: staging
     path: ./environments/staging
+    # ignore:
+    #   - resource: "aws_instance.canary"
+    #     attributes: [user_data, ami]
 
 # Use either github OR gitlab — not both
 

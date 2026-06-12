@@ -128,8 +128,8 @@ func (g *GitLab) openMR(branch string, d detector.DriftResult) (*PRResult, error
 
 func (g *GitLab) lastCommentIsTerrawatch(mrIID int) (bool, error) {
 	opts := &gl.ListMergeRequestNotesOptions{
-		OrderBy: gl.Ptr("created_at"),
-		Sort:    gl.Ptr("desc"),
+		OrderBy:     gl.Ptr("created_at"),
+		Sort:        gl.Ptr("desc"),
 		ListOptions: gl.ListOptions{PerPage: 1},
 	}
 	notes, _, err := g.client.Notes.ListMergeRequestNotes(g.project, int64(mrIID), opts)
