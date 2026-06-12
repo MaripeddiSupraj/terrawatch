@@ -43,4 +43,4 @@ github:
 #   assignees: []
 
 terraform:
-  bin_path: terraform             # optional, defaults to "terraform" on PATH
+  bin_path: terraform             # optional — auto-detects terraform, then tofu (OpenTofu)
