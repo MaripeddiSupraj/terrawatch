@@ -1,3 +1,13 @@
+# How to treat plan changes:
+#   all    - any change is drift (default)
+#   strict - run a refresh-only plan first; only real infrastructure drift
+#            opens a PR / fails the run. Merged-but-unapplied code changes
+#            are reported for visibility but do not fail. (Same as --classify.)
+# drift_mode: all
+
+# Close a stack's open drift PR automatically when it comes back clean.
+# auto_close: true
+
 # Ignore rules reduce noise by filtering out known false-drift.
 # Each rule has a glob pattern on the resource address and an optional
 # list of attribute dot-paths. With no attributes, the entire resource
@@ -44,3 +54,4 @@ github:
 
 terraform:
   bin_path: terraform             # optional — auto-detects terraform, then tofu (OpenTofu)
+  timeout: 30m                    # optional — per-command timeout; "0" disables (default 30m)

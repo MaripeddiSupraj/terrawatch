@@ -221,7 +221,7 @@ func runDetect(cmd *cobra.Command, args []string) error {
 			sr.Summary = summaryJSON(result.Plan.Summary)
 		default:
 			out.StackDrift(s.Name, result.Plan.Summary, result.HiddenChanges,
-				result.Kind == detector.KindInfraDrift)
+				driftKindForUI(result.Kind))
 			drifts = append(drifts, *result)
 			sr.Status = "drift"
 			sr.Kind = string(result.Kind)
@@ -301,6 +301,17 @@ func runDetect(cmd *cobra.Command, args []string) error {
 
 func summaryJSON(s terraform.Summary) *jsonSummary {
 	return &jsonSummary{Add: s.Add, Change: s.Change, Destroy: s.Destroy}
+}
+
+func driftKindForUI(k detector.Kind) ui.DriftKind {
+	switch k {
+	case detector.KindInfraDrift:
+		return ui.DriftInfra
+	case detector.KindUnappliedChanges:
+		return ui.DriftUnapplied
+	default:
+		return ui.DriftGeneric
+	}
 }
 
 func setPRURL(r *runReport, stackName, url string) {

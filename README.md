@@ -74,6 +74,62 @@ embedded in the PR is unmodified terraform output and still shows ignored attrib
 
 Glob patterns use `path.Match` semantics: `*` matches any sequence of characters within a segment (dots are literal, not segment separators).
 
+### Real drift vs. unapplied changes
+
+A plain `terraform plan` shows changes for two very different reasons:
+
+1. **Real infrastructure drift** — someone changed the cloud outside Terraform.
+2. **Unapplied code changes** — code was merged but never `apply`-ed; the cloud still matches state.
+
+Most teams only want to be paged for (1). Run with `--classify` (or set `drift_mode: strict`) and terrawatch runs an extra `plan -refresh-only` to tell them apart:
+
+```bash
+terrawatch detect --classify
+```
+
+```
+  ⚠  eks                  infra drift        +0 ~1 -0
+  ℹ  vpc                  unapplied changes  +1 ~0 -0
+```
+
+In **strict** mode, unapplied changes are reported for visibility but do **not** open a PR or fail the run (exit code stays `0`). Only real infra drift triggers a PR and exit code `2`. The trade-off: classification runs a second plan per stack, so scans take longer.
+
+### Machine-readable output
+
+```bash
+terrawatch detect --format json
+```
+
+Emits a stable JSON document to **stdout** (all human output goes to stderr, so the stream stays pipeable):
+
+```json
+{
+  "version": "0.4.0",
+  "engine": "terraform",
+  "scanned": 2, "drifted": 1, "clean": 1, "errors": 0,
+  "stacks": [
+    { "name": "eks", "path": "./eks", "status": "drift",
+      "kind": "infra_drift", "summary": { "add": 0, "change": 1, "destroy": 0 },
+      "pr_url": "https://github.com/org/repo/pull/42" },
+    { "name": "vpc", "path": "./vpc", "status": "clean" }
+  ]
+}
+```
+
+Use `--quiet` to silence the human output entirely (errors still print to stderr).
+
+### Validate before you run
+
+`terrawatch validate` is a preflight check — config parses, every stack path exists and has `.tf` files, the terraform/tofu binary resolves, and the GitHub/GitLab token actually authenticates against the repo. Exits `1` on any failure. Wire it into CI ahead of the detect job to fail fast on a bad token or moved directory:
+
+```bash
+terrawatch validate --config terrawatch.yaml
+```
+
+### Auto-closing resolved drift
+
+When a stack that previously had an open drift PR comes back clean, terrawatch comments "✅ Drift resolved" and closes the PR, deleting its branch — so your PR queue never fills with stale drift reports. On by default; set `auto_close: false` to disable.
+
 ---
 
 ## Install
@@ -278,6 +334,11 @@ terrawatch detect --recursive     walk all subdirs for terraform stacks
 terrawatch detect --dry-run       print drift, do not open a PR
 terrawatch detect --config        use a config file (enables PR creation)
 terrawatch detect --bin tofu      force a specific terraform/tofu binary
+terrawatch detect --classify      tell real infra drift from unapplied code
+terrawatch detect --stack NAME    scan only the named stack(s); repeatable
+terrawatch detect --format json   machine-readable output (stdout = pure JSON)
+terrawatch detect --quiet         suppress everything except errors
+terrawatch validate               preflight: config, paths, binary, token auth
 terrawatch version                print version info
 ```
 
@@ -305,6 +366,15 @@ esac
 ## Configuration reference
 
 ```yaml
+# How to treat plan changes:
+#   all    - any change is drift (default)
+#   strict - run a refresh-only plan first; only real infra drift opens a
+#            PR / fails the run, unapplied code changes are informational
+drift_mode: all
+
+# Close a stack's open drift PR when it comes back clean (default: true)
+auto_close: true
+
 # Global ignore rules — applies to all stacks.
 ignore:
   - resource: string       # glob pattern on resource address
@@ -339,6 +409,7 @@ gitlab:
 
 terraform:
   bin_path: tofu           # terraform/tofu binary — auto-detected if omitted
+  timeout: 30m             # per-command timeout; "0" disables (default 30m)
 ```
 
 ---
@@ -349,7 +420,9 @@ terraform:
 |---|---|---|---|
 | Requires a running server | Yes | Yes (needs K8s) | No |
 | Detects drift automatically | No | No | Yes |
+| Real drift vs. unapplied code | No | No | Yes (`--classify`) |
 | Opens a PR/MR on drift | Yes (on PR only) | No | Yes |
+| Auto-closes resolved drift PRs | No | No | Yes |
 | GitHub + GitLab | GitHub only | No | Yes |
 | OpenTofu support | Partial | No | Yes (auto-detected) |
 | Stored cloud credentials | Yes | Yes | No (OIDC) |

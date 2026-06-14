@@ -121,13 +121,26 @@ func (u *UI) StackClean(name string) {
 	fmt.Fprintf(u.out, "  %s  %-20s %s\n", checkMark, bold.Sprint(name), dim.Sprint("no drift"))
 }
 
-func (u *UI) StackDrift(name string, s terraform.Summary, hidden int, infraDrift bool) {
+// DriftKind selects the wording shown for a drifted stack. It mirrors the
+// detector's classification but lives in the ui package to avoid an import.
+type DriftKind int
+
+const (
+	DriftGeneric   DriftKind = iota // classification off
+	DriftInfra                      // real infrastructure drift
+	DriftUnapplied                  // unapplied code changes (reported as drift in all-mode)
+)
+
+func (u *UI) StackDrift(name string, s terraform.Summary, hidden int, kind DriftKind) {
 	if u.quiet {
 		return
 	}
 	label := "drift detected"
-	if infraDrift {
+	switch kind {
+	case DriftInfra:
 		label = "infra drift"
+	case DriftUnapplied:
+		label = "drift (unapplied code)"
 	}
 	summary := yellow.Sprintf("+%d ~%d -%d", s.Add, s.Change, s.Destroy)
 	extra := ""
