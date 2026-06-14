@@ -8,8 +8,13 @@ import (
 	"github.com/MaripeddiSupraj/terrawatch/internal/detector"
 )
 
+// driftBranchPrefix marks branches terrawatch created. Auto-close only ever
+// touches PRs/MRs whose head branch carries this prefix, so a manually
+// created PR that happens to share the title is never closed.
+const driftBranchPrefix = "drift/"
+
 func branchName(stackName string, t time.Time) string {
-	return fmt.Sprintf("drift/%s-%s", stackName, t.Format("20060102-150405"))
+	return fmt.Sprintf("%s%s-%s", driftBranchPrefix, stackName, t.Format("20060102-150405"))
 }
 
 func reportFilename(stackName string, t time.Time) string {

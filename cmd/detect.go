@@ -194,6 +194,10 @@ func runDetect(cmd *cobra.Command, args []string) error {
 
 	var drifts []detector.DriftResult
 	var cleanStacks []string
+	// resolvedStacks are stacks with no real infra drift — clean stacks plus
+	// strict-mode unapplied-change stacks. Any open drift PR for these should
+	// be auto-closed.
+	var resolvedStacks []string
 	errs := 0
 
 	for _, s := range cfg.Stacks {
@@ -212,10 +216,13 @@ func runDetect(cmd *cobra.Command, args []string) error {
 		case result == nil:
 			out.StackClean(s.Name)
 			cleanStacks = append(cleanStacks, s.Name)
+			resolvedStacks = append(resolvedStacks, s.Name)
 			sr.Status = "clean"
 		case strict && result.Kind == detector.KindUnappliedChanges:
-			// the cloud matches state — report informationally, don't fail
+			// the cloud matches state — report informationally, don't fail,
+			// and treat it as resolved so any stale drift PR is closed
 			out.StackUnapplied(s.Name, result.Plan.Summary)
+			resolvedStacks = append(resolvedStacks, s.Name)
 			sr.Status = "unapplied"
 			sr.Kind = string(result.Kind)
 			sr.Summary = summaryJSON(result.Plan.Summary)
@@ -241,7 +248,7 @@ func runDetect(cmd *cobra.Command, args []string) error {
 
 	ctx := context.Background()
 	needReporter := !localMode && !dryRun &&
-		(len(drifts) > 0 || (cfg.AutoCloseEnabled() && len(cleanStacks) > 0))
+		(len(drifts) > 0 || (cfg.AutoCloseEnabled() && len(resolvedStacks) > 0))
 
 	if needReporter {
 		r, err := buildReporter(cfg)
@@ -264,7 +271,7 @@ func runDetect(cmd *cobra.Command, args []string) error {
 		}
 
 		if cfg.AutoCloseEnabled() {
-			for _, name := range cleanStacks {
+			for _, name := range resolvedStacks {
 				pr, err := r.CloseResolvedDriftPR(ctx, name)
 				if err != nil {
 					// best effort — never fails the run

@@ -48,7 +48,11 @@ func runValidate(_ *cobra.Command, _ []string) error {
 	for _, s := range cfg.Stacks {
 		var err error
 		if _, statErr := os.Stat(s.Path); statErr != nil {
-			err = fmt.Errorf("path does not exist: %s", s.Path)
+			if os.IsNotExist(statErr) {
+				err = fmt.Errorf("path does not exist: %s", s.Path)
+			} else {
+				err = fmt.Errorf("cannot access %s: %w", s.Path, statErr)
+			}
 		} else if !config.HasTerraformFiles(s.Path) {
 			err = fmt.Errorf("no .tf files in %s", s.Path)
 		}

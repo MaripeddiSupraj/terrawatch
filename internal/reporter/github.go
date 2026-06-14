@@ -93,6 +93,11 @@ func (g *GitHub) CloseResolvedDriftPR(ctx context.Context, stackName string) (*P
 	if existing == nil {
 		return nil, nil
 	}
+	// Safety gate: only ever close PRs whose branch terrawatch created.
+	// A manually opened PR that happens to share the title is left alone.
+	if !strings.HasPrefix(existing.HeadRef, driftBranchPrefix) {
+		return nil, nil
+	}
 
 	_ = g.addComment(ctx, existing.Number, resolvedCommentBody(stackName, timeNowUTC()))
 

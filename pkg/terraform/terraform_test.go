@@ -306,7 +306,10 @@ func TestPlan_does_not_pass_refresh_only(t *testing.T) {
 		t.Error("exit 0 must mean no changes")
 	}
 
-	args, _ := os.ReadFile(filepath.Join(dir, "args.log"))
+	args, err := os.ReadFile(filepath.Join(dir, "args.log"))
+	if err != nil {
+		t.Fatalf("reading args.log: %v", err)
+	}
 	if strings.Contains(string(args), "-refresh-only") {
 		t.Errorf("normal plan must not pass -refresh-only, got:\n%s", args)
 	}

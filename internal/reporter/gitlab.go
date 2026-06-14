@@ -62,6 +62,10 @@ func (g *GitLab) CloseResolvedDriftPR(ctx context.Context, stackName string) (*P
 	if existing == nil {
 		return nil, nil
 	}
+	// Safety gate: only ever close MRs whose branch terrawatch created.
+	if !strings.HasPrefix(existing.HeadRef, driftBranchPrefix) {
+		return nil, nil
+	}
 
 	_ = g.addMRComment(existing.Number, resolvedCommentBody(stackName, timeNowUTC()))
 

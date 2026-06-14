@@ -99,3 +99,37 @@ func TestPrBody_plan_in_details_block(t *testing.T) {
 		t.Error("PR body plan output should be in a details block")
 	}
 }
+
+func TestDriftBranchPrefix_matches_branchName(t *testing.T) {
+	// the auto-close safety gate keys off this prefix; it must match
+	// what branchName actually produces
+	if !strings.HasPrefix(branchName("any", fixedTime), driftBranchPrefix) {
+		t.Errorf("branchName output must start with driftBranchPrefix %q", driftBranchPrefix)
+	}
+}
+
+func TestPRBody_infra_drift_kind(t *testing.T) {
+	d := detector.DriftResult{
+		Stack:      config.Stack{Name: "eks", Path: "./eks"},
+		Plan:       &terraform.PlanResult{Summary: terraform.Summary{Change: 1}, Output: "~ x"},
+		DetectedAt: fixedTime,
+		Kind:       detector.KindInfraDrift,
+	}
+	body := prBody(d)
+	if !strings.Contains(body, "Real infrastructure drift") {
+		t.Errorf("expected infra-drift callout in PR body, got:\n%s", body)
+	}
+}
+
+func TestPRBody_unapplied_kind(t *testing.T) {
+	d := detector.DriftResult{
+		Stack:      config.Stack{Name: "eks", Path: "./eks"},
+		Plan:       &terraform.PlanResult{Summary: terraform.Summary{Add: 1}, Output: "+ x"},
+		DetectedAt: fixedTime,
+		Kind:       detector.KindUnappliedChanges,
+	}
+	body := prBody(d)
+	if !strings.Contains(body, "Unapplied code changes") {
+		t.Errorf("expected unapplied-changes callout in PR body, got:\n%s", body)
+	}
+}

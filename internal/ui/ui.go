@@ -252,6 +252,9 @@ func (u *UI) PRError(name string, err error) {
 
 // Warn prints a non-fatal warning that never affects the exit code.
 func (u *UI) Warn(name string, err error) {
+	if u.quiet {
+		return
+	}
 	fmt.Fprintf(u.out, "  %s  %-20s %s\n",
 		warnMark,
 		bold.Sprint(name),

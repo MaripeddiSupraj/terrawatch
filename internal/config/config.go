@@ -221,9 +221,14 @@ func validate(cfg *Config) error {
 	}
 
 	if cfg.Terraform.Timeout != "" {
-		if _, err := time.ParseDuration(cfg.Terraform.Timeout); err != nil {
+		d, err := time.ParseDuration(cfg.Terraform.Timeout)
+		if err != nil {
 			return fmt.Errorf("config: terraform.timeout %q is not a valid duration (e.g. \"10m\", \"1h\"): %w",
 				cfg.Terraform.Timeout, err)
+		}
+		if d < 0 {
+			return fmt.Errorf("config: terraform.timeout %q must not be negative (use \"0\" to disable)",
+				cfg.Terraform.Timeout)
 		}
 	}
 

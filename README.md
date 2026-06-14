@@ -87,7 +87,7 @@ Most teams only want to be paged for (1). Run with `--classify` (or set `drift_m
 terrawatch detect --classify
 ```
 
-```
+```text
   ⚠  eks                  infra drift        +0 ~1 -0
   ℹ  vpc                  unapplied changes  +1 ~0 -0
 ```
