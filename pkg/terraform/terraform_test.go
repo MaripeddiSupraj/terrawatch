@@ -1,11 +1,14 @@
 package terraform
 
 import (
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
+	"time"
 )
 
 // fakeBin creates an executable file named name in dir.
@@ -215,5 +218,99 @@ func TestParseSummaryJSON_excludes_no_op_from_changes(t *testing.T) {
 	}
 	if s.Change != 1 {
 		t.Errorf("expected Change=1, got %d", s.Change)
+	}
+}
+
+func TestRun_timeout(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("unix-only fake binary")
+	}
+	dir := t.TempDir()
+	slow := filepath.Join(dir, "slow-terraform")
+	if err := os.WriteFile(slow, []byte("#!/bin/sh\nsleep 5\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	r := New(slow, dir).WithTimeout(200 * time.Millisecond)
+	_, runErr := r.run("init")
+	if runErr == nil {
+		t.Fatal("expected timeout error")
+	}
+	if !strings.Contains(runErr.Error(), "timed out") {
+		t.Errorf("expected timeout message, got: %v", runErr)
+	}
+}
+
+// fakeTerraform writes a script that records its args and exits with the
+// requested code for plan, while answering show/show -json plausibly.
+func fakeTerraform(t *testing.T, dir string, planExit int) string {
+	t.Helper()
+	script := fmt.Sprintf(`#!/bin/sh
+echo "$@" >> %s/args.log
+case "$1" in
+  plan) exit %d ;;
+  show)
+    case "$*" in
+      *-json*) echo '{"resource_changes":[{"address":"null_resource.x","change":{"actions":["update"]}}]}' ;;
+      *) echo "~ null_resource.x" ;;
+    esac
+    exit 0 ;;
+  *) exit 0 ;;
+esac
+`, dir, planExit)
+	bin := filepath.Join(dir, "terraform")
+	if err := os.WriteFile(bin, []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	return bin
+}
+
+func TestPlanRefreshOnly_passes_flag(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("unix-only fake binary")
+	}
+	dir := t.TempDir()
+	bin := fakeTerraform(t, dir, 2)
+
+	r := New(bin, dir)
+	result, err := r.PlanRefreshOnly("")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !result.HasChanges {
+		t.Error("exit 2 must mean changes")
+	}
+
+	args, err := os.ReadFile(filepath.Join(dir, "args.log"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(args), "-refresh-only") {
+		t.Errorf("expected -refresh-only in args, got:\n%s", args)
+	}
+}
+
+func TestPlan_does_not_pass_refresh_only(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("unix-only fake binary")
+	}
+	dir := t.TempDir()
+	bin := fakeTerraform(t, dir, 0)
+
+	r := New(bin, dir)
+	result, err := r.Plan("")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result.HasChanges {
+		t.Error("exit 0 must mean no changes")
+	}
+
+	args, err := os.ReadFile(filepath.Join(dir, "args.log"))
+	if err != nil {
+		t.Fatalf("reading args.log: %v", err)
+	}
+	if strings.Contains(string(args), "-refresh-only") {
+		t.Errorf("normal plan must not pass -refresh-only, got:\n%s", args)
 	}
 }

@@ -8,8 +8,13 @@ import (
 	"github.com/MaripeddiSupraj/terrawatch/internal/detector"
 )
 
+// driftBranchPrefix marks branches terrawatch created. Auto-close only ever
+// touches PRs/MRs whose head branch carries this prefix, so a manually
+// created PR that happens to share the title is never closed.
+const driftBranchPrefix = "drift/"
+
 func branchName(stackName string, t time.Time) string {
-	return fmt.Sprintf("drift/%s-%s", stackName, t.Format("20060102-150405"))
+	return fmt.Sprintf("%s%s-%s", driftBranchPrefix, stackName, t.Format("20060102-150405"))
 }
 
 func reportFilename(stackName string, t time.Time) string {
@@ -28,6 +33,13 @@ func prBody(d detector.DriftResult) string {
 	b.WriteString(fmt.Sprintf("**Stack:** `%s`\n", d.Stack.Name))
 	b.WriteString(fmt.Sprintf("**Path:** `%s`\n", d.Stack.Path))
 	b.WriteString(fmt.Sprintf("**Detected at:** %s\n\n", d.DetectedAt.Format(time.RFC1123)))
+
+	switch d.Kind {
+	case detector.KindInfraDrift:
+		b.WriteString("> ⚠️ **Real infrastructure drift** — live resources differ from terraform state.\n\n")
+	case detector.KindUnappliedChanges:
+		b.WriteString("> ℹ️ **Unapplied code changes** — the cloud matches state, but merged code was never applied.\n\n")
+	}
 
 	if d.HiddenChanges > 0 {
 		b.WriteString(fmt.Sprintf("> **%d change(s) hidden by ignore rules.**\n\n", d.HiddenChanges))
@@ -76,6 +88,13 @@ func planAsDiff(output string) string {
 		}
 	}
 	return strings.Join(out, "\n")
+}
+
+// resolvedCommentBody is posted to a drift PR just before auto-closing it.
+func resolvedCommentBody(stackName string, t time.Time) string {
+	return fmt.Sprintf(
+		"### ✅ Drift resolved\n\nterrawatch re-checked **%s** at %s and found no drift — closing this PR automatically.\n",
+		stackName, t.Format(time.RFC1123))
 }
 
 // commentBody builds the comment posted to an existing drift PR on re-detection.

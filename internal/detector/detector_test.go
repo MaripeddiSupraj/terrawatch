@@ -10,13 +10,23 @@ import (
 )
 
 type mockPlanner struct {
-	initErr error
-	result  *terraform.PlanResult
-	planErr error
+	initErr       error
+	result        *terraform.PlanResult
+	planErr       error
+	refreshResult *terraform.PlanResult
+	refreshErr    error
+	refreshCalls  int
 }
 
 func (m *mockPlanner) Init() error                                  { return m.initErr }
 func (m *mockPlanner) Plan(_ string) (*terraform.PlanResult, error) { return m.result, m.planErr }
+func (m *mockPlanner) PlanRefreshOnly(_ string) (*terraform.PlanResult, error) {
+	m.refreshCalls++
+	if m.refreshResult == nil {
+		return &terraform.PlanResult{}, m.refreshErr
+	}
+	return m.refreshResult, m.refreshErr
+}
 
 func testConfig(stacks ...config.Stack) *config.Config {
 	return &config.Config{
@@ -142,5 +152,101 @@ func TestDetect_detected_at_is_utc(t *testing.T) {
 	drifts, _ := d.Detect()
 	if drifts[0].DetectedAt.Location() != time.UTC {
 		t.Error("expected DetectedAt in UTC")
+	}
+}
+
+func TestClassify_off_by_default(t *testing.T) {
+	cfg := testConfig(config.Stack{Name: "prod", Path: "./prod"})
+	m := &mockPlanner{result: &terraform.PlanResult{HasChanges: true}}
+	d := newDetectorWithMock(cfg, m)
+
+	drifts, err := d.Detect()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if m.refreshCalls != 0 {
+		t.Errorf("expected no refresh-only plan without classify, got %d calls", m.refreshCalls)
+	}
+	if drifts[0].Kind != KindUnclassified {
+		t.Errorf("expected unclassified kind, got %q", drifts[0].Kind)
+	}
+}
+
+func TestClassify_infra_drift(t *testing.T) {
+	cfg := testConfig(config.Stack{Name: "prod", Path: "./prod"})
+	m := &mockPlanner{
+		result:        &terraform.PlanResult{HasChanges: true},
+		refreshResult: &terraform.PlanResult{HasChanges: true},
+	}
+	d := newDetectorWithMock(cfg, m)
+	d.Classify = true
+
+	drifts, err := d.Detect()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if m.refreshCalls != 1 {
+		t.Errorf("expected 1 refresh-only call, got %d", m.refreshCalls)
+	}
+	if drifts[0].Kind != KindInfraDrift {
+		t.Errorf("expected infra_drift, got %q", drifts[0].Kind)
+	}
+}
+
+func TestClassify_unapplied_changes(t *testing.T) {
+	cfg := testConfig(config.Stack{Name: "prod", Path: "./prod"})
+	m := &mockPlanner{
+		result:        &terraform.PlanResult{HasChanges: true},
+		refreshResult: &terraform.PlanResult{HasChanges: false},
+	}
+	d := newDetectorWithMock(cfg, m)
+	d.Classify = true
+
+	drifts, err := d.Detect()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if drifts[0].Kind != KindUnappliedChanges {
+		t.Errorf("expected unapplied_changes, got %q", drifts[0].Kind)
+	}
+}
+
+func TestClassify_skips_refresh_when_plan_clean(t *testing.T) {
+	cfg := testConfig(config.Stack{Name: "prod", Path: "./prod"})
+	m := &mockPlanner{result: &terraform.PlanResult{HasChanges: false}}
+	d := newDetectorWithMock(cfg, m)
+	d.Classify = true
+
+	if _, err := d.Detect(); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if m.refreshCalls != 0 {
+		t.Errorf("clean stack must not trigger a refresh-only plan, got %d calls", m.refreshCalls)
+	}
+}
+
+func TestClassify_refresh_error_propagates(t *testing.T) {
+	cfg := testConfig(config.Stack{Name: "prod", Path: "./prod"})
+	m := &mockPlanner{
+		result:     &terraform.PlanResult{HasChanges: true},
+		refreshErr: errors.New("provider crashed"),
+	}
+	d := newDetectorWithMock(cfg, m)
+	d.Classify = true
+
+	if _, err := d.Detect(); err == nil {
+		t.Fatal("expected refresh-only failure to propagate")
+	}
+}
+
+func TestNew_strict_mode_enables_classify(t *testing.T) {
+	cfg := testConfig(config.Stack{Name: "prod", Path: "./prod"})
+	cfg.DriftMode = config.DriftModeStrict
+	if !New(cfg).Classify {
+		t.Error("drift_mode strict must enable classification")
+	}
+	cfg.DriftMode = config.DriftModeAll
+	if New(cfg).Classify {
+		t.Error("drift_mode all must not enable classification")
 	}
 }

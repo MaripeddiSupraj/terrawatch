@@ -52,6 +52,44 @@ func (g *GitLab) CreateDriftPR(ctx context.Context, d detector.DriftResult) (*PR
 	return g.openMR(branch, d)
 }
 
+// CloseResolvedDriftPR closes the open drift MR for a clean stack, commenting
+// first and deleting the drift branch. Returns (nil, nil) if no MR is open.
+func (g *GitLab) CloseResolvedDriftPR(ctx context.Context, stackName string) (*PRResult, error) {
+	existing, err := g.findExistingMR(stackName)
+	if err != nil {
+		return nil, fmt.Errorf("check existing MRs: %w", err)
+	}
+	if existing == nil {
+		return nil, nil
+	}
+	// Safety gate: only ever close MRs whose branch terrawatch created.
+	if !strings.HasPrefix(existing.HeadRef, driftBranchPrefix) {
+		return nil, nil
+	}
+
+	_ = g.addMRComment(existing.Number, resolvedCommentBody(stackName, timeNowUTC()))
+
+	if _, _, err := g.client.MergeRequests.UpdateMergeRequest(g.project, int64(existing.Number),
+		&gl.UpdateMergeRequestOptions{StateEvent: gl.Ptr("close")}); err != nil {
+		return nil, fmt.Errorf("close MR !%d: %w", existing.Number, err)
+	}
+
+	if existing.HeadRef != "" {
+		// best effort — a leftover branch must never fail the run
+		_, _ = g.client.Branches.DeleteBranch(g.project, existing.HeadRef)
+	}
+
+	return existing, nil
+}
+
+// ValidateAuth makes one cheap authenticated call to verify the token works.
+func (g *GitLab) ValidateAuth(ctx context.Context) error {
+	if _, _, err := g.client.Projects.GetProject(g.project, nil); err != nil {
+		return fmt.Errorf("gitlab auth check failed for %s: %w", g.project, err)
+	}
+	return nil
+}
+
 func (g *GitLab) findExistingMR(stackName string) (*PRResult, error) {
 	state := "opened"
 	opts := &gl.ListProjectMergeRequestsOptions{
@@ -67,7 +105,7 @@ func (g *GitLab) findExistingMR(stackName string) (*PRResult, error) {
 		}
 		for _, mr := range mrs {
 			if mr.Title == title {
-				return &PRResult{URL: mr.WebURL, Number: int(mr.IID), Existing: true}, nil
+				return &PRResult{URL: mr.WebURL, Number: int(mr.IID), Existing: true, HeadRef: mr.SourceBranch}, nil
 			}
 		}
 		if resp.NextPage == 0 {

@@ -2,23 +2,35 @@ package terraform
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"time"
 )
+
+// DefaultTimeout bounds a single terraform command so a hung plan
+// (stuck provider, unreachable backend) cannot stall a CI job forever.
+const DefaultTimeout = 30 * time.Minute
 
 // Planner is implemented by Runner and can be substituted in tests.
 type Planner interface {
 	Init() error
 	Plan(varsFile string) (*PlanResult, error)
+	// PlanRefreshOnly runs plan -refresh-only: changes mean live
+	// infrastructure differs from state (true drift), independent of
+	// any unapplied code changes.
+	PlanRefreshOnly(varsFile string) (*PlanResult, error)
 }
 
 type Runner struct {
 	binPath    string
 	workingDir string
+	timeout    time.Duration
 }
 
 type PlanResult struct {
@@ -60,7 +72,13 @@ func New(binPath, workingDir string) *Runner {
 	if binPath == "" {
 		binPath = "terraform"
 	}
-	return &Runner{binPath: binPath, workingDir: workingDir}
+	return &Runner{binPath: binPath, workingDir: workingDir, timeout: DefaultTimeout}
+}
+
+// WithTimeout overrides the per-command timeout. Zero disables it.
+func (r *Runner) WithTimeout(d time.Duration) *Runner {
+	r.timeout = d
+	return r
 }
 
 // ResolveBinPath returns the IaC binary to use. A configured path wins;
@@ -92,12 +110,26 @@ func (r *Runner) Init() error {
 }
 
 func (r *Runner) Plan(varsFile string) (*PlanResult, error) {
+	return r.plan(varsFile, false)
+}
+
+func (r *Runner) PlanRefreshOnly(varsFile string) (*PlanResult, error) {
+	return r.plan(varsFile, true)
+}
+
+func (r *Runner) plan(varsFile string, refreshOnly bool) (*PlanResult, error) {
 	// planName is relative to workingDir — terraform resolves it from its own CWD
-	const planName = ".terrawatch-plan"
+	planName := ".terrawatch-plan"
+	if refreshOnly {
+		planName = ".terrawatch-refresh-plan"
+	}
 	planFileAbs := filepath.Join(r.workingDir, planName)
 	defer os.Remove(planFileAbs)
 
 	args := []string{"plan", "-out=" + planName, "-detailed-exitcode", "-no-color", "-input=false"}
+	if refreshOnly {
+		args = append(args, "-refresh-only")
+	}
 	if varsFile != "" {
 		args = append(args, "-var-file="+varsFile)
 	}
@@ -121,6 +153,10 @@ func (r *Runner) Plan(varsFile string) (*PlanResult, error) {
 		}
 		return &PlanResult{HasChanges: true, Output: showOut, Summary: *summary, ResourceChanges: changes}, nil
 	default:
+		if exitCode == -1 && err != nil {
+			// not an ExitError — e.g. binary missing or command timeout
+			return nil, fmt.Errorf("terraform plan failed: %w", err)
+		}
 		return nil, fmt.Errorf("terraform plan failed (exit %d): %s", exitCode, out)
 	}
 }
@@ -172,12 +208,23 @@ func ParseSummaryJSON(jsonStr string) (*Summary, []ResourceChange, error) {
 }
 
 func (r *Runner) run(args ...string) (string, error) {
-	cmd := exec.Command(r.binPath, args...)
+	ctx := context.Background()
+	cancel := func() {}
+	if r.timeout > 0 {
+		ctx, cancel = context.WithTimeout(ctx, r.timeout)
+	}
+	defer cancel()
+
+	cmd := exec.CommandContext(ctx, r.binPath, args...)
 	cmd.Dir = r.workingDir
 	var buf bytes.Buffer
 	cmd.Stdout = &buf
 	cmd.Stderr = &buf
 	err := cmd.Run()
+	if errors.Is(ctx.Err(), context.DeadlineExceeded) {
+		return buf.String(), fmt.Errorf("%s %s timed out after %s — raise terraform.timeout in the config if plans legitimately take longer",
+			filepath.Base(r.binPath), args[0], r.timeout)
+	}
 	return buf.String(), err
 }
 

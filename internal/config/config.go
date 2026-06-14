@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/spf13/viper"
 )
@@ -20,12 +21,32 @@ type IgnoreRule struct {
 	Attributes []string `mapstructure:"attributes"`
 }
 
+// Drift mode values for Config.DriftMode.
+const (
+	// DriftModeAll treats any plan changes as drift (default).
+	DriftModeAll = "all"
+	// DriftModeStrict only treats true infrastructure drift as drift:
+	// a refresh-only plan is run first, and merged-but-unapplied code
+	// changes are reported informationally without failing the run.
+	DriftModeStrict = "strict"
+)
+
 type Config struct {
 	Ignore    []IgnoreRule `mapstructure:"ignore"`
 	Stacks    []Stack      `mapstructure:"stacks"`
 	GitHub    GitHub       `mapstructure:"github"`
 	GitLab    GitLab       `mapstructure:"gitlab"`
 	Terraform Terraform    `mapstructure:"terraform"`
+	// DriftMode is "all" (default) or "strict" — see DriftMode constants.
+	DriftMode string `mapstructure:"drift_mode"`
+	// AutoClose closes a stack's open drift PR when the stack comes back
+	// clean. Defaults to true; nil means unset.
+	AutoClose *bool `mapstructure:"auto_close"`
+}
+
+// AutoCloseEnabled returns the auto_close setting, defaulting to true.
+func (c *Config) AutoCloseEnabled() bool {
+	return c.AutoClose == nil || *c.AutoClose
 }
 
 type Stack struct {
@@ -55,6 +76,9 @@ type GitLab struct {
 
 type Terraform struct {
 	BinPath string `mapstructure:"bin_path"`
+	// Timeout bounds each terraform command (e.g. "10m", "1h").
+	// Empty uses the built-in default; "0" disables the timeout.
+	Timeout string `mapstructure:"timeout"`
 }
 
 // LocalConfigFromDirs builds a minimal config from one or more directories,
@@ -187,5 +211,38 @@ func validate(cfg *Config) error {
 		}
 	}
 
+	switch cfg.DriftMode {
+	case "", DriftModeAll:
+		cfg.DriftMode = DriftModeAll
+	case DriftModeStrict:
+	default:
+		return fmt.Errorf("config: drift_mode must be %q or %q, got %q",
+			DriftModeAll, DriftModeStrict, cfg.DriftMode)
+	}
+
+	if cfg.Terraform.Timeout != "" {
+		d, err := time.ParseDuration(cfg.Terraform.Timeout)
+		if err != nil {
+			return fmt.Errorf("config: terraform.timeout %q is not a valid duration (e.g. \"10m\", \"1h\"): %w",
+				cfg.Terraform.Timeout, err)
+		}
+		if d < 0 {
+			return fmt.Errorf("config: terraform.timeout %q must not be negative (use \"0\" to disable)",
+				cfg.Terraform.Timeout)
+		}
+	}
+
 	return nil
+}
+
+// TerraformTimeout returns the configured per-command timeout, or def when unset.
+func (c *Config) TerraformTimeout(def time.Duration) time.Duration {
+	if c.Terraform.Timeout == "" {
+		return def
+	}
+	d, err := time.ParseDuration(c.Terraform.Timeout)
+	if err != nil {
+		return def
+	}
+	return d
 }
