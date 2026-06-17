@@ -4,9 +4,33 @@
 
 terrawatch runs `terraform plan` on your stacks on a schedule, and when real infrastructure no longer matches your code, it automatically opens a pull request — so your team can review and fix it.
 
-No servers. No Kubernetes. Drop it into any existing CI pipeline in minutes.
+No servers. No Kubernetes. Works with **Terraform** and **OpenTofu** (auto-detected). Drop it into any CI pipeline in minutes.
 
-Works with both **Terraform** and **OpenTofu** — the binary is auto-detected, no configuration needed.
+---
+
+## Try it in 30 seconds
+
+```bash
+# Install (macOS / Linux)
+brew tap MaripeddiSupraj/terrawatch
+brew install terrawatch
+
+# Run it in any Terraform directory — no config, no cloud credentials
+cd your-terraform-dir
+terrawatch detect
+```
+
+```text
+  terrawatch 0.3.0
+
+  Scanning 1 stack(s)
+
+  ⚠  production          drift detected  +0 ~1 -0
+
+  1 scanned  ·  1 drifted  ·  0 clean
+```
+
+That's local mode — it just prints drift and exits. To make it open PRs automatically, add a [config file](#set-up-automated-pr-creation). Other ways to install are [below](#install).
 
 ---
 
@@ -47,6 +71,19 @@ Summary
 ```
 
 If an open drift PR already exists for a stack, terrawatch skips it — no duplicate PRs.
+
+---
+
+## Features
+
+| | What it does |
+|---|---|
+| [Ignore rules](#ignore-rules) | Filter out known false-drift (tags, autoscaling, managed metadata) so you only see real changes |
+| [Real drift vs. unapplied code](#real-drift-vs-unapplied-changes) | `--classify` tells genuine infra drift apart from merged-but-unapplied code |
+| [Auto-close resolved PRs](#auto-closing-resolved-drift) | Closes the drift PR automatically when a stack comes back clean |
+| [JSON output](#machine-readable-output) | `--format json` for piping into CI / dashboards |
+| [Preflight check](#validate-before-you-run) | `terrawatch validate` verifies config, paths, binary, and token before a real run |
+| OpenTofu support | `terraform` and `tofu` both work — auto-detected, or force with `--bin` |
 
 ### Ignore rules
 
@@ -104,7 +141,7 @@ Emits a stable JSON document to **stdout** (all human output goes to stderr, so 
 
 ```json
 {
-  "version": "0.4.0",
+  "version": "0.3.0",
   "engine": "terraform",
   "scanned": 2, "drifted": 1, "clean": 1, "errors": 0,
   "stacks": [
@@ -161,34 +198,19 @@ go install github.com/MaripeddiSupraj/terrawatch@latest
 
 ---
 
-## Try it immediately
+## Local mode
 
-No config file needed. Just run it in any Terraform directory:
-
-```bash
-cd infra/production
-terrawatch detect
-```
-
-Or scan everything at once:
+Run `terrawatch detect` in any Terraform directory with no config file — it prints drift and exits (always a dry-run, never opens a PR). Handy for a quick check or a pre-commit hook.
 
 ```bash
-terrawatch detect --recursive ./infra
+terrawatch detect --recursive ./infra    # scan every stack under a directory
+terrawatch detect --bin tofu             # force OpenTofu (otherwise auto-detected)
 ```
 
-Using OpenTofu? It just works — `tofu` is picked up automatically when `terraform` isn't installed, or force it explicitly:
-
-```bash
-terrawatch detect --bin tofu
-```
-
-Output:
-
-```
-  terrawatch v0.1.0
+```text
+  terrawatch 0.3.0
 
   no config file — local mode (dry-run)
-
   engine: terraform
 
   Scanning 3 stack(s)
@@ -197,11 +219,8 @@ Output:
   ⚠  eks                  drift detected  +1 ~0 -0
   ✓  rds                  no drift
 
-  ──────────────────────────────────────────────────
   3 scanned  ·  1 drifted  ·  2 clean
 ```
-
-Local mode is always a dry-run — it prints results and exits. No PR is opened without a config file.
 
 ---
 
