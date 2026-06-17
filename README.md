@@ -2,9 +2,14 @@
 
 **Catch Terraform drift before it causes an incident.**
 
+[![CI](https://github.com/MaripeddiSupraj/terrawatch/actions/workflows/ci.yml/badge.svg)](https://github.com/MaripeddiSupraj/terrawatch/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/MaripeddiSupraj/terrawatch)](https://github.com/MaripeddiSupraj/terrawatch/releases/latest)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![Terraform | OpenTofu](https://img.shields.io/badge/Terraform-%7C%20OpenTofu-7B42BC)](https://opentofu.org)
+
 terrawatch runs `terraform plan` on your stacks on a schedule, and when real infrastructure no longer matches your code, it automatically opens a pull request — so your team can review and fix it.
 
-No servers. No Kubernetes. Works with **Terraform** and **OpenTofu** (auto-detected). Drop it into any CI pipeline in minutes.
+A free, no-server alternative to driftctl (deprecated) and Terraform Cloud's paid drift detection. No servers, no Kubernetes, no stored cloud credentials. Works with **Terraform** and **OpenTofu** (auto-detected). Drop it into any CI pipeline in minutes.
 
 ---
 
