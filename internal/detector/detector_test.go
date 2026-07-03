@@ -2,6 +2,7 @@ package detector
 
 import (
 	"errors"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -236,6 +237,117 @@ func TestClassify_refresh_error_propagates(t *testing.T) {
 
 	if _, err := d.Detect(); err == nil {
 		t.Fatal("expected refresh-only failure to propagate")
+	}
+}
+
+// slowPlanner blocks in Plan long enough for concurrency to be observable
+// and tracks the peak number of in-flight plans.
+type slowPlanner struct {
+	inFlight *atomic.Int32
+	peak     *atomic.Int32
+	hasDrift bool
+}
+
+func (p *slowPlanner) Init() error { return nil }
+func (p *slowPlanner) Plan(_ string) (*terraform.PlanResult, error) {
+	n := p.inFlight.Add(1)
+	for {
+		old := p.peak.Load()
+		if n <= old || p.peak.CompareAndSwap(old, n) {
+			break
+		}
+	}
+	time.Sleep(30 * time.Millisecond)
+	p.inFlight.Add(-1)
+	return &terraform.PlanResult{HasChanges: p.hasDrift}, nil
+}
+func (p *slowPlanner) PlanRefreshOnly(_ string) (*terraform.PlanResult, error) {
+	return &terraform.PlanResult{}, nil
+}
+
+func TestDetectAsync_results_in_stack_order(t *testing.T) {
+	cfg := testConfig(
+		config.Stack{Name: "a", Path: "./a"},
+		config.Stack{Name: "b", Path: "./b"},
+		config.Stack{Name: "c", Path: "./c"},
+	)
+	var inFlight, peak atomic.Int32
+	d := &Detector{
+		cfg: cfg,
+		plannerFunc: func(ws config.Stack) terraform.Planner {
+			return &slowPlanner{inFlight: &inFlight, peak: &peak, hasDrift: ws.Name == "b"}
+		},
+	}
+
+	outcomes := d.DetectAsync(3)
+	if len(outcomes) != 3 {
+		t.Fatalf("expected 3 outcome channels, got %d", len(outcomes))
+	}
+	for i, name := range []string{"a", "b", "c"} {
+		oc := <-outcomes[i]
+		if oc.Stack.Name != name {
+			t.Errorf("outcome %d: expected stack %q, got %q", i, name, oc.Stack.Name)
+		}
+		if oc.Err != nil {
+			t.Errorf("outcome %d: unexpected error: %v", i, oc.Err)
+		}
+		wantDrift := name == "b"
+		if (oc.Result != nil) != wantDrift {
+			t.Errorf("outcome %d (%s): drift=%v, want %v", i, name, oc.Result != nil, wantDrift)
+		}
+	}
+	if peak.Load() < 2 {
+		t.Errorf("expected at least 2 concurrent plans with 3 workers, peak was %d", peak.Load())
+	}
+}
+
+func TestDetectAsync_one_worker_is_sequential(t *testing.T) {
+	cfg := testConfig(
+		config.Stack{Name: "a", Path: "./a"},
+		config.Stack{Name: "b", Path: "./b"},
+		config.Stack{Name: "c", Path: "./c"},
+	)
+	var inFlight, peak atomic.Int32
+	d := &Detector{
+		cfg: cfg,
+		plannerFunc: func(ws config.Stack) terraform.Planner {
+			return &slowPlanner{inFlight: &inFlight, peak: &peak}
+		},
+	}
+
+	// workers=0 must clamp to 1, so both runs stay strictly sequential
+	for _, workers := range []int{1, 0} {
+		outcomes := d.DetectAsync(workers)
+		for i := range outcomes {
+			<-outcomes[i]
+		}
+		if peak.Load() != 1 {
+			t.Errorf("workers=%d: expected exactly 1 in-flight plan, peak was %d", workers, peak.Load())
+		}
+	}
+}
+
+func TestDetectAsync_error_propagates_per_stack(t *testing.T) {
+	cfg := testConfig(
+		config.Stack{Name: "ok", Path: "./ok"},
+		config.Stack{Name: "bad", Path: "./bad"},
+	)
+	d := &Detector{
+		cfg: cfg,
+		plannerFunc: func(ws config.Stack) terraform.Planner {
+			if ws.Name == "bad" {
+				return &mockPlanner{planErr: errors.New("provider exploded")}
+			}
+			return &mockPlanner{result: &terraform.PlanResult{HasChanges: false}}
+		},
+	}
+
+	outcomes := d.DetectAsync(2)
+	if oc := <-outcomes[0]; oc.Err != nil {
+		t.Errorf("stack ok: unexpected error: %v", oc.Err)
+	}
+	if oc := <-outcomes[1]; oc.Err == nil {
+		t.Error("stack bad: expected plan error to propagate")
 	}
 }
 

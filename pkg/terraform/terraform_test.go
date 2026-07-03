@@ -265,6 +265,52 @@ esac
 	return bin
 }
 
+func TestInit_passes_backend_config_sorted(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("unix-only fake binary")
+	}
+	dir := t.TempDir()
+	bin := fakeTerraform(t, dir, 0)
+
+	r := New(bin, dir).WithBackendConfig(map[string]string{
+		"key":    "prod/terraform.tfstate",
+		"bucket": "my-state-bucket",
+	})
+	if err := r.Init(); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	args, err := os.ReadFile(filepath.Join(dir, "args.log"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := string(args)
+	want := "-backend-config=bucket=my-state-bucket -backend-config=key=prod/terraform.tfstate"
+	if !strings.Contains(got, want) {
+		t.Errorf("expected sorted backend-config flags %q in args, got:\n%s", want, got)
+	}
+}
+
+func TestInit_no_backend_config_flags_when_unset(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("unix-only fake binary")
+	}
+	dir := t.TempDir()
+	bin := fakeTerraform(t, dir, 0)
+
+	if err := New(bin, dir).Init(); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	args, err := os.ReadFile(filepath.Join(dir, "args.log"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(args), "-backend-config") {
+		t.Errorf("init without backend config must not pass -backend-config, got:\n%s", args)
+	}
+}
+
 func TestPlanRefreshOnly_passes_flag(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("unix-only fake binary")

@@ -8,6 +8,10 @@
 # Close a stack's open drift PR automatically when it comes back clean.
 # auto_close: true
 
+# How many stacks to plan concurrently (default: 1, i.e. sequential).
+# The --parallel flag overrides this.
+# concurrency: 4
+
 # Ignore rules reduce noise by filtering out known false-drift.
 # Each rule has a glob pattern on the resource address and an optional
 # list of attribute dot-paths. With no attributes, the entire resource
@@ -26,6 +30,8 @@ stacks:
     vars_file: prod.tfvars        # optional
   - name: staging
     path: ./environments/staging
+    # backend_config:             # optional — passed to init as
+    #   key: staging/tf.tfstate   # -backend-config=key=value flags
     # ignore:
     #   - resource: "aws_instance.canary"
     #     attributes: [user_data, ami]

@@ -204,6 +204,23 @@ github:
 	}
 }
 
+func TestLoad_concurrency(t *testing.T) {
+	cfg, err := Load(writeTemp(t, "concurrency: 4\n"+validYAML))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.Concurrency != 4 {
+		t.Errorf("expected concurrency 4, got %d", cfg.Concurrency)
+	}
+}
+
+func TestLoad_concurrency_negative(t *testing.T) {
+	_, err := Load(writeTemp(t, "concurrency: -2\n"+validYAML))
+	if err == nil {
+		t.Fatal("expected error for negative concurrency")
+	}
+}
+
 func TestAutoCloseEnabled_default_true(t *testing.T) {
 	cfg := &Config{}
 	if !cfg.AutoCloseEnabled() {

@@ -45,7 +45,9 @@ func New(cfg *config.Config) *Detector {
 	return &Detector{
 		cfg: cfg,
 		plannerFunc: func(ws config.Stack) terraform.Planner {
-			return terraform.New(cfg.Terraform.BinPath, ws.Path).WithTimeout(timeout)
+			return terraform.New(cfg.Terraform.BinPath, ws.Path).
+				WithTimeout(timeout).
+				WithBackendConfig(ws.BackendConfig)
 		},
 		Classify: cfg.DriftMode == config.DriftModeStrict,
 	}
@@ -71,6 +73,53 @@ func (d *Detector) Detect() ([]DriftResult, error) {
 // DetectOne checks a single stack and returns nil if no drift.
 func (d *Detector) DetectOne(ws config.Stack) (*DriftResult, error) {
 	return d.checkStack(ws)
+}
+
+// Outcome is the result of scanning one stack. Result is nil when the
+// stack is clean.
+type Outcome struct {
+	Stack  config.Stack
+	Result *DriftResult
+	Err    error
+}
+
+// DetectAsync scans all configured stacks with up to workers concurrent
+// planners. It returns one channel per stack, in stack order; each channel
+// receives exactly one Outcome. Jobs are dispatched in stack order, so
+// workers=1 behaves exactly like a sequential scan.
+func (d *Detector) DetectAsync(workers int) []<-chan Outcome {
+	stacks := d.cfg.Stacks
+	if workers < 1 {
+		workers = 1
+	}
+	if workers > len(stacks) {
+		workers = len(stacks)
+	}
+
+	jobs := make(chan int)
+	outs := make([]chan Outcome, len(stacks))
+	ret := make([]<-chan Outcome, len(stacks))
+	for i := range outs {
+		outs[i] = make(chan Outcome, 1)
+		ret[i] = outs[i]
+	}
+
+	for w := 0; w < workers; w++ {
+		go func() {
+			for i := range jobs {
+				result, err := d.checkStack(stacks[i])
+				outs[i] <- Outcome{Stack: stacks[i], Result: result, Err: err}
+			}
+		}()
+	}
+	go func() {
+		for i := range stacks {
+			jobs <- i
+		}
+		close(jobs)
+	}()
+
+	return ret
 }
 
 func (d *Detector) checkStack(ws config.Stack) (*DriftResult, error) {

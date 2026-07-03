@@ -3,6 +3,7 @@ package cmd
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 
@@ -23,6 +24,7 @@ var (
 	quiet        bool
 	classify     bool
 	stackFilter  []string
+	parallel     int
 )
 
 var detectCmd = &cobra.Command{
@@ -60,6 +62,7 @@ func init() {
 	detectCmd.Flags().BoolVarP(&quiet, "quiet", "q", false, "suppress informational output (errors still print)")
 	detectCmd.Flags().BoolVar(&classify, "classify", false, "run a refresh-only plan to tell real infra drift from unapplied code changes")
 	detectCmd.Flags().StringSliceVar(&stackFilter, "stack", nil, "only scan the named stack(s) from the config (repeatable)")
+	detectCmd.Flags().IntVarP(&parallel, "parallel", "p", 0, "scan up to N stacks concurrently (default: concurrency from config, or 1)")
 	rootCmd.AddCommand(detectCmd)
 }
 
@@ -105,6 +108,30 @@ type runReport struct {
 	Stacks  []stackReport `json:"stacks"`
 }
 
+// fallBackToLocalMode reports whether a config load failure should degrade
+// to local (dry-run) mode: only when no --config was passed AND the default
+// config file does not exist. A config file that exists but fails to load
+// must surface its error — in CI a silent fallback would stop PR creation.
+func fallBackToLocalMode(configChanged bool, path string) bool {
+	if configChanged {
+		return false
+	}
+	_, err := os.Stat(path)
+	return errors.Is(err, os.ErrNotExist)
+}
+
+// workerCount resolves scan parallelism: the --parallel flag wins, then the
+// config's concurrency, and anything unset or invalid means sequential.
+func workerCount(flag, configured int) int {
+	if flag > 0 {
+		return flag
+	}
+	if configured > 0 {
+		return configured
+	}
+	return 1
+}
+
 // filterStacks returns only the named stacks, erroring on unknown names.
 func filterStacks(stacks []config.Stack, names []string) ([]config.Stack, error) {
 	if len(names) == 0 {
@@ -144,8 +171,13 @@ func runDetect(cmd *cobra.Command, args []string) error {
 
 	localMode := false
 
-	if cfgErr != nil && !configChanged {
-		// no explicit config — build from args / cwd / recursive walk
+	if cfgErr != nil {
+		if !fallBackToLocalMode(configChanged, cfgFile) {
+			// --config was passed explicitly, or the default config file
+			// exists but is broken — never silently degrade to a dry-run.
+			return fmt.Errorf("load config: %w", cfgErr)
+		}
+		// no config file at all — build from args / cwd / recursive walk
 		dirs, err := resolveDirs(args)
 		if err != nil {
 			return err
@@ -153,8 +185,6 @@ func runDetect(cmd *cobra.Command, args []string) error {
 		cfg = config.LocalConfigFromDirs(dirs)
 		localMode = true
 		dryRun = true
-	} else if cfgErr != nil {
-		return fmt.Errorf("load config: %w", cfgErr)
 	}
 
 	if localMode {
@@ -200,10 +230,13 @@ func runDetect(cmd *cobra.Command, args []string) error {
 	var resolvedStacks []string
 	errs := 0
 
-	for _, s := range cfg.Stacks {
+	outcomes := det.DetectAsync(workerCount(parallel, cfg.Concurrency))
+
+	for i, s := range cfg.Stacks {
 		stop := out.StackScanning(s.Name)
-		result, err := det.DetectOne(s)
+		oc := <-outcomes[i]
 		stop()
+		result, err := oc.Result, oc.Err
 
 		sr := stackReport{Name: s.Name, Path: s.Path}
 

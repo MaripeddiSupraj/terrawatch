@@ -88,6 +88,7 @@ If an open drift PR already exists for a stack, terrawatch skips it — no dupli
 | [Auto-close resolved PRs](#auto-closing-resolved-drift) | Closes the drift PR automatically when a stack comes back clean |
 | [JSON output](#machine-readable-output) | `--format json` for piping into CI / dashboards |
 | [Preflight check](#validate-before-you-run) | `terrawatch validate` verifies config, paths, binary, and token before a real run |
+| [Parallel scanning](#parallel-scanning) | `--parallel N` plans several stacks at once — big repos scan in a fraction of the time |
 | OpenTofu support | `terraform` and `tofu` both work — auto-detected, or force with `--bin` |
 
 ### Ignore rules
@@ -167,6 +168,16 @@ Use `--quiet` to silence the human output entirely (errors still print to stderr
 ```bash
 terrawatch validate --config terrawatch.yaml
 ```
+
+### Parallel scanning
+
+By default stacks are planned one at a time. With many stacks (or `--classify`, which doubles the plans), pass `--parallel N` or set `concurrency` in the config to run up to N plans concurrently:
+
+```bash
+terrawatch detect --parallel 4
+```
+
+Results are still printed in stack order, and exit codes are unchanged. Each stack is an independent working directory, so plans don't contend — but they do share provider API rate limits, so start with 4 and raise it if your cloud provider is happy.
 
 ### Auto-closing resolved drift
 
@@ -360,6 +371,7 @@ terrawatch detect --config        use a config file (enables PR creation)
 terrawatch detect --bin tofu      force a specific terraform/tofu binary
 terrawatch detect --classify      tell real infra drift from unapplied code
 terrawatch detect --stack NAME    scan only the named stack(s); repeatable
+terrawatch detect --parallel N    plan up to N stacks concurrently (default 1)
 terrawatch detect --format json   machine-readable output (stdout = pure JSON)
 terrawatch detect --quiet         suppress everything except errors
 terrawatch validate               preflight: config, paths, binary, token auth
@@ -399,6 +411,10 @@ drift_mode: all
 # Close a stack's open drift PR when it comes back clean (default: true)
 auto_close: true
 
+# How many stacks to plan concurrently (default: 1, i.e. sequential).
+# The --parallel flag overrides this.
+concurrency: 1
+
 # Global ignore rules — applies to all stacks.
 ignore:
   - resource: string       # glob pattern on resource address
@@ -408,8 +424,8 @@ stacks:
   - name: string           # display name for this stack
     path: string           # path to the terraform root module
     vars_file: string      # optional .tfvars file
-    backend_config:        # optional backend key/value overrides
-      key: value
+    backend_config:        # optional key/value pairs passed to init as
+      key: value           # -backend-config=key=value (e.g. per-stack state key)
     ignore:                # optional per-stack overrides, appended to global
       - resource: string
         attributes: []

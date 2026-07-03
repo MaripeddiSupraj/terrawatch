@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 )
@@ -28,9 +29,10 @@ type Planner interface {
 }
 
 type Runner struct {
-	binPath    string
-	workingDir string
-	timeout    time.Duration
+	binPath       string
+	workingDir    string
+	timeout       time.Duration
+	backendConfig map[string]string
 }
 
 type PlanResult struct {
@@ -81,6 +83,13 @@ func (r *Runner) WithTimeout(d time.Duration) *Runner {
 	return r
 }
 
+// WithBackendConfig sets key/value overrides passed to init as
+// -backend-config=key=value flags (e.g. a per-stack state key).
+func (r *Runner) WithBackendConfig(kv map[string]string) *Runner {
+	r.backendConfig = kv
+	return r
+}
+
 // ResolveBinPath returns the IaC binary to use. A configured path wins;
 // otherwise the first of terraform/tofu found on PATH is used.
 func ResolveBinPath(configured string) (string, error) {
@@ -105,7 +114,17 @@ func IsOpenTofu(binPath string) bool {
 }
 
 func (r *Runner) Init() error {
-	_, err := r.run("init", "-input=false", "-no-color")
+	args := []string{"init", "-input=false", "-no-color"}
+	// sorted for a deterministic command line
+	keys := make([]string, 0, len(r.backendConfig))
+	for k := range r.backendConfig {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	for _, k := range keys {
+		args = append(args, fmt.Sprintf("-backend-config=%s=%s", k, r.backendConfig[k]))
+	}
+	_, err := r.run(args...)
 	return err
 }
 

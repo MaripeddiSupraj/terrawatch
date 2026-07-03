@@ -42,6 +42,9 @@ type Config struct {
 	// AutoClose closes a stack's open drift PR when the stack comes back
 	// clean. Defaults to true; nil means unset.
 	AutoClose *bool `mapstructure:"auto_close"`
+	// Concurrency is how many stacks are scanned in parallel.
+	// 0 (unset) means sequential; the --parallel flag overrides it.
+	Concurrency int `mapstructure:"concurrency"`
 }
 
 // AutoCloseEnabled returns the auto_close setting, defaulting to true.
@@ -209,6 +212,10 @@ func validate(cfg *Config) error {
 		if cfg.GitLab.BaseURL == "" {
 			cfg.GitLab.BaseURL = "https://gitlab.com"
 		}
+	}
+
+	if cfg.Concurrency < 0 {
+		return fmt.Errorf("config: concurrency must not be negative, got %d", cfg.Concurrency)
 	}
 
 	switch cfg.DriftMode {
