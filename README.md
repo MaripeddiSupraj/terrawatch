@@ -23,7 +23,7 @@ terrawatch detect
 ```
 
 ```text
-  terrawatch 0.3.0
+  terrawatch 0.3.0-dev
 
   Scanning 1 stack(s)
 
@@ -143,7 +143,7 @@ Emits a stable JSON document to **stdout** (all human output goes to stderr, so 
 
 ```json
 {
-  "version": "0.3.0",
+  "version": "0.3.0-dev",
   "engine": "terraform",
   "scanned": 2, "drifted": 1, "clean": 1, "errors": 0,
   "stacks": [
@@ -214,7 +214,7 @@ terrawatch detect --bin tofu             # force OpenTofu (otherwise auto-detect
 ```
 
 ```text
-  terrawatch 0.3.0
+  terrawatch 0.3.0-dev
 
   no config file — local mode (dry-run)
   engine: terraform

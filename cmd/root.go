@@ -10,7 +10,7 @@ import (
 var cfgFile string
 
 var (
-	buildVersion = "dev"
+	buildVersion = "0.3.0-dev"
 	buildCommit  = "none"
 	buildDate    = "unknown"
 )

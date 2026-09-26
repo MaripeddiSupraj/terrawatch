@@ -4,7 +4,7 @@ import "github.com/MaripeddiSupraj/terrawatch/cmd"
 
 // set by goreleaser via ldflags
 var (
-	version = "dev"
+	version = "0.3.0-dev"
 	commit  = "none"
 	date    = "unknown"
 )
