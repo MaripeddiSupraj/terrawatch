@@ -113,7 +113,7 @@ func (g *GitLab) findExistingMR(stackName string) (*PRResult, error) {
 			return nil, err
 		}
 		for _, mr := range mrs {
-			if mr.Title == title {
+			if mr.Title == title && strings.HasPrefix(mr.SourceBranch, driftBranchPrefix) {
 				return &PRResult{URL: mr.WebURL, Number: int(mr.IID), Existing: true, HeadRef: mr.SourceBranch}, nil
 			}
 		}
