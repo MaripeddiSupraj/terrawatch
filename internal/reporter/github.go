@@ -142,7 +142,7 @@ func (g *GitHub) findExistingDriftPR(ctx context.Context, stackName string) (*PR
 			return nil, err
 		}
 		for _, pr := range prs {
-			if pr.GetTitle() == expectedTitle {
+			if pr.GetTitle() == expectedTitle && strings.HasPrefix(pr.GetHead().GetRef(), driftBranchPrefix) {
 				return &PRResult{
 					URL:      pr.GetHTMLURL(),
 					Number:   pr.GetNumber(),
