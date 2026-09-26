@@ -21,9 +21,30 @@ func TestBranchName(t *testing.T) {
 }
 
 func TestBranchName_special_chars(t *testing.T) {
-	got := branchName("my-stack", fixedTime)
-	if !strings.HasPrefix(got, "drift/my-stack-") {
-		t.Errorf("branchName %q missing expected prefix", got)
+	got := branchName("prod/us west", fixedTime)
+	if !strings.HasPrefix(got, "drift/prod-us-west-") {
+		t.Errorf("branchName %q missing sanitized prefix", got)
+	}
+	if strings.Contains(strings.TrimPrefix(got, driftBranchPrefix), "/") {
+		t.Errorf("branchName %q contains an unsafe nested path", got)
+	}
+}
+
+func TestBranchName_path_traversal_is_sanitized(t *testing.T) {
+	got := branchName("../../prod", fixedTime)
+	if strings.Contains(got, "..") {
+		t.Errorf("branchName %q still contains path traversal", got)
+	}
+	if strings.Count(got, "/") != 1 {
+		t.Errorf("branchName %q must only contain the drift/ prefix separator", got)
+	}
+}
+
+func TestSafeSlug_different_unsafe_names_do_not_collide(t *testing.T) {
+	a := safeSlug("prod/us")
+	b := safeSlug("prod us")
+	if a == b {
+		t.Fatalf("unsafe stack names collapsed to the same slug: %q", a)
 	}
 }
 
@@ -32,6 +53,14 @@ func TestReportFilename(t *testing.T) {
 	want := "drift-reports/staging-20260423-060000.md"
 	if got != want {
 		t.Errorf("reportFilename = %q, want %q", got, want)
+	}
+}
+
+func TestReportFilename_path_traversal_is_sanitized(t *testing.T) {
+	got := reportFilename("../../production", fixedTime)
+	rest := strings.TrimPrefix(got, "drift-reports/")
+	if strings.Contains(rest, "/") || strings.Contains(rest, "..") {
+		t.Errorf("reportFilename %q is unsafe", got)
 	}
 }
 
@@ -101,8 +130,6 @@ func TestPrBody_plan_in_details_block(t *testing.T) {
 }
 
 func TestDriftBranchPrefix_matches_branchName(t *testing.T) {
-	// the auto-close safety gate keys off this prefix; it must match
-	// what branchName actually produces
 	if !strings.HasPrefix(branchName("any", fixedTime), driftBranchPrefix) {
 		t.Errorf("branchName output must start with driftBranchPrefix %q", driftBranchPrefix)
 	}
