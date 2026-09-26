@@ -191,18 +191,12 @@ func validate(cfg *Config) error {
 	}
 
 	if hasGitHub {
-		if cfg.GitHub.Token == "" {
-			return fmt.Errorf("config: github token required via config or GITHUB_TOKEN env var")
-		}
 		if cfg.GitHub.BaseBranch == "" {
 			cfg.GitHub.BaseBranch = "main"
 		}
 	}
 
 	if hasGitLab {
-		if cfg.GitLab.Token == "" {
-			return fmt.Errorf("config: gitlab token required via config or GITLAB_TOKEN env var")
-		}
 		if cfg.GitLab.BaseBranch == "" {
 			cfg.GitLab.BaseBranch = "main"
 		}
