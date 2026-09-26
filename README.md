@@ -2,7 +2,6 @@
 
 **Catch Terraform drift before it causes an incident.**
 
-[![CI](https://github.com/MaripeddiSupraj/terrawatch/actions/workflows/ci.yml/badge.svg)](https://github.com/MaripeddiSupraj/terrawatch/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Terraform | OpenTofu](https://img.shields.io/badge/Terraform-%7C%20OpenTofu-7B42BC)](https://opentofu.org)
 
@@ -190,6 +189,18 @@ go build -o terrawatch .
 
 Release archives and a Homebrew tap are intentionally not advertised here until
 the public release pipeline has produced and verified them.
+
+### Verify a source checkout
+
+The repository includes a CI-independent verification command. It runs formatting,
+static analysis, race-enabled tests, a full build, and a CLI smoke test:
+
+```bash
+bash scripts/verify.sh
+```
+
+This gives contributors the same release gate even when a hosted CI provider is
+unavailable.
 
 ---
 
