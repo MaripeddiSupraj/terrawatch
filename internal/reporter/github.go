@@ -27,13 +27,17 @@ type PRResult struct {
 	Number   int
 	Existing bool   // true if PR already existed
 	HeadRef  string // source branch of the PR, used for cleanup on close
+	Body     string // current PR/MR body, used to avoid unnecessary updates
 }
 
 func ptr[T any](v T) *T { return &v }
 
 func NewGitHub(cfg config.GitHub) (*GitHub, error) {
-	parts := strings.SplitN(cfg.Repo, "/", 2)
-	if len(parts) != 2 {
+	if cfg.Token == "" {
+		return nil, fmt.Errorf("github token required via config or GITHUB_TOKEN env var")
+	}
+	parts := strings.Split(cfg.Repo, "/")
+	if len(parts) != 2 || parts[0] == "" || parts[1] == "" {
 		return nil, fmt.Errorf("invalid repo format %q, expected owner/repo", cfg.Repo)
 	}
 
@@ -55,9 +59,12 @@ func (g *GitHub) CreateDriftPR(ctx context.Context, d detector.DriftResult) (*PR
 	if existing, err := g.findExistingDriftPR(ctx, d.Stack.Name); err != nil {
 		return nil, fmt.Errorf("check existing PRs: %w", err)
 	} else if existing != nil {
-		// only comment if the last comment is not already from terrawatch
-		if already, _ := g.lastCommentIsTerrawatch(ctx, existing.Number); !already {
-			_ = g.addComment(ctx, existing.Number, commentBody(d))
+		body := prBody(d)
+		if existing.Body != body {
+			if err := g.updatePRBody(ctx, existing.Number, body); err != nil {
+				return nil, fmt.Errorf("refresh existing PR: %w", err)
+			}
+			existing.Body = body
 		}
 		return existing, nil
 	}
@@ -74,10 +81,12 @@ func (g *GitHub) CreateDriftPR(ctx context.Context, d detector.DriftResult) (*PR
 		return nil, fmt.Errorf("create branch: %w", err)
 	}
 	if err := g.createFile(ctx, branch, filename, content, d); err != nil {
+		g.deleteBranchBestEffort(ctx, branch)
 		return nil, fmt.Errorf("create file: %w", err)
 	}
 	pr, err := g.openPR(ctx, branch, d)
 	if err != nil {
+		g.deleteBranchBestEffort(ctx, branch)
 		return nil, fmt.Errorf("open PR: %w", err)
 	}
 	return pr, nil
@@ -137,12 +146,15 @@ func (g *GitHub) findExistingDriftPR(ctx context.Context, stackName string) (*PR
 			return nil, err
 		}
 		for _, pr := range prs {
-			if pr.GetTitle() == expectedTitle {
+			headRef := pr.GetHead().GetRef()
+			expectedBranchPrefix := driftBranchPrefix + safeSlug(stackName) + "-"
+			if pr.GetTitle() == expectedTitle || strings.HasPrefix(headRef, expectedBranchPrefix) {
 				return &PRResult{
 					URL:      pr.GetHTMLURL(),
 					Number:   pr.GetNumber(),
 					Existing: true,
-					HeadRef:  pr.GetHead().GetRef(),
+					HeadRef:  headRef,
+					Body:     pr.GetBody(),
 				}, nil
 			}
 		}
@@ -182,6 +194,13 @@ func (g *GitHub) createFile(ctx context.Context, branch, filename, content strin
 	return err
 }
 
+func (g *GitHub) deleteBranchBestEffort(ctx context.Context, branch string) {
+	if !strings.HasPrefix(branch, driftBranchPrefix) {
+		return
+	}
+	_, _ = g.client.Git.DeleteRef(ctx, g.owner, g.repo, "refs/heads/"+branch)
+}
+
 // lastCommentIsTerrawatch returns true if the most recent comment on the PR
 // was already posted by terrawatch — so we don't spam on every run.
 func (g *GitHub) lastCommentIsTerrawatch(ctx context.Context, prNumber int) (bool, error) {
@@ -194,6 +213,13 @@ func (g *GitHub) lastCommentIsTerrawatch(ctx context.Context, prNumber int) (boo
 		return false, err
 	}
 	return strings.Contains(comments[0].GetBody(), "### Drift still present"), nil
+}
+
+func (g *GitHub) updatePRBody(ctx context.Context, prNumber int, body string) error {
+	_, _, err := g.client.PullRequests.Edit(ctx, g.owner, g.repo, prNumber, &gogithub.PullRequest{
+		Body: ptr(body),
+	})
+	return err
 }
 
 func (g *GitHub) addComment(ctx context.Context, prNumber int, body string) error {

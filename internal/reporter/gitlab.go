@@ -21,6 +21,9 @@ func NewGitLab(cfg config.GitLab) (*GitLab, error) {
 	if cfg.Repo == "" {
 		return nil, fmt.Errorf("gitlab.repo is required")
 	}
+	if cfg.Token == "" {
+		return nil, fmt.Errorf("gitlab token required via config or GITLAB_TOKEN env var")
+	}
 	client, err := gl.NewClient(cfg.Token, gl.WithBaseURL(cfg.BaseURL))
 	if err != nil {
 		return nil, fmt.Errorf("gitlab client: %w", err)
@@ -33,8 +36,12 @@ func (g *GitLab) CreateDriftPR(ctx context.Context, d detector.DriftResult) (*PR
 	if existing, err := g.findExistingMR(d.Stack.Name); err != nil {
 		return nil, fmt.Errorf("check existing MRs: %w", err)
 	} else if existing != nil {
-		if already, _ := g.lastCommentIsTerrawatch(existing.Number); !already {
-			_ = g.addMRComment(existing.Number, commentBody(d))
+		body := prBody(d)
+		if existing.Body != body {
+			if err := g.updateMRBody(existing.Number, body); err != nil {
+				return nil, fmt.Errorf("refresh existing MR: %w", err)
+			}
+			existing.Body = body
 		}
 		return existing, nil
 	}
@@ -47,9 +54,15 @@ func (g *GitLab) CreateDriftPR(ctx context.Context, d detector.DriftResult) (*PR
 		return nil, fmt.Errorf("create branch: %w", err)
 	}
 	if err := g.createFile(branch, filename, content, d); err != nil {
+		g.deleteBranchBestEffort(branch)
 		return nil, fmt.Errorf("create file: %w", err)
 	}
-	return g.openMR(branch, d)
+	mr, err := g.openMR(branch, d)
+	if err != nil {
+		g.deleteBranchBestEffort(branch)
+		return nil, fmt.Errorf("open MR: %w", err)
+	}
+	return mr, nil
 }
 
 // CloseResolvedDriftPR closes the open drift MR for a clean stack, commenting
@@ -104,8 +117,15 @@ func (g *GitLab) findExistingMR(stackName string) (*PRResult, error) {
 			return nil, err
 		}
 		for _, mr := range mrs {
-			if mr.Title == title {
-				return &PRResult{URL: mr.WebURL, Number: int(mr.IID), Existing: true, HeadRef: mr.SourceBranch}, nil
+			expectedBranchPrefix := driftBranchPrefix + safeSlug(stackName) + "-"
+			if mr.Title == title || strings.HasPrefix(mr.SourceBranch, expectedBranchPrefix) {
+				return &PRResult{
+					URL:      mr.WebURL,
+					Number:   int(mr.IID),
+					Existing: true,
+					HeadRef:  mr.SourceBranch,
+					Body:     mr.Description,
+				}, nil
 			}
 		}
 		if resp.NextPage == 0 {
@@ -132,6 +152,13 @@ func (g *GitLab) createFile(branch, filename, content string, d detector.DriftRe
 		Content:       &content,
 	})
 	return err
+}
+
+func (g *GitLab) deleteBranchBestEffort(branch string) {
+	if !strings.HasPrefix(branch, driftBranchPrefix) {
+		return
+	}
+	_, _ = g.client.Branches.DeleteBranch(g.project, branch)
 }
 
 func (g *GitLab) openMR(branch string, d detector.DriftResult) (*PRResult, error) {
@@ -175,6 +202,12 @@ func (g *GitLab) lastCommentIsTerrawatch(mrIID int) (bool, error) {
 		return false, err
 	}
 	return strings.Contains(notes[0].Body, "### Drift still present"), nil
+}
+
+func (g *GitLab) updateMRBody(mrIID int, body string) error {
+	_, _, err := g.client.MergeRequests.UpdateMergeRequest(g.project, int64(mrIID),
+		&gl.UpdateMergeRequestOptions{Description: &body})
+	return err
 }
 
 func (g *GitLab) addMRComment(mrIID int, body string) error {

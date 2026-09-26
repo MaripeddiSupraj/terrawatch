@@ -9,3 +9,5 @@ dist/
 terrawatch.yaml
 terrawatch-test.yaml
 terrawatch
+
+testdata/workspace/managed.txt

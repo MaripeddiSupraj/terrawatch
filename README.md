@@ -3,30 +3,28 @@
 **Catch Terraform drift before it causes an incident.**
 
 [![CI](https://github.com/MaripeddiSupraj/terrawatch/actions/workflows/ci.yml/badge.svg)](https://github.com/MaripeddiSupraj/terrawatch/actions/workflows/ci.yml)
-[![Release](https://img.shields.io/github/v/release/MaripeddiSupraj/terrawatch)](https://github.com/MaripeddiSupraj/terrawatch/releases/latest)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Terraform | OpenTofu](https://img.shields.io/badge/Terraform-%7C%20OpenTofu-7B42BC)](https://opentofu.org)
 
-terrawatch runs `terraform plan` on your stacks on a schedule, and when real infrastructure no longer matches your code, it automatically opens a pull request — so your team can review and fix it.
+terrawatch runs Terraform/OpenTofu plans in your existing CI and turns meaningful drift into a GitHub pull request or GitLab merge request for human review.
 
-A free, no-server alternative to driftctl (deprecated) and Terraform Cloud's paid drift detection. No servers, no Kubernetes, no stored cloud credentials. Works with **Terraform** and **OpenTofu** (auto-detected). Drop it into any CI pipeline in minutes.
+It is deliberately **CI-native**: no TerraWatch server, controller, or Kubernetes installation is required. Cloud authentication stays in the CI job (OIDC/workload identity is recommended), and local/dry-run scans do not require VCS credentials.
 
 ---
 
 ## Try it in 30 seconds
 
 ```bash
-# Install (macOS / Linux)
-brew tap MaripeddiSupraj/terrawatch
-brew install terrawatch
+# Install the current source build
+go install github.com/MaripeddiSupraj/terrawatch@main
 
-# Run it in any Terraform directory — no config, no cloud credentials
+# Run it in any Terraform directory — no config or VCS token required
 cd your-terraform-dir
 terrawatch detect
 ```
 
 ```text
-  terrawatch 0.3.0
+  terrawatch
 
   Scanning 1 stack(s)
 
@@ -176,30 +174,21 @@ When a stack that previously had an open drift PR comes back clean, terrawatch c
 
 ## Install
 
-**Homebrew (Mac / Linux):**
+**Current source build:**
 
 ```bash
-brew tap MaripeddiSupraj/terrawatch
-brew install terrawatch
+go install github.com/MaripeddiSupraj/terrawatch@main
 ```
 
-**curl (Linux / Mac):**
+Or build it locally:
 
 ```bash
-# Linux (amd64)
-curl -sSL https://github.com/MaripeddiSupraj/terrawatch/releases/latest/download/terrawatch_linux_amd64.tar.gz | tar xz
-sudo mv terrawatch /usr/local/bin/
-
-# Mac (Apple Silicon)
-curl -sSL https://github.com/MaripeddiSupraj/terrawatch/releases/latest/download/terrawatch_darwin_arm64.tar.gz | tar xz
-sudo mv terrawatch /usr/local/bin/
+git clone https://github.com/MaripeddiSupraj/terrawatch.git
+cd terrawatch
+go install .
 ```
 
-**Go:**
-
-```bash
-go install github.com/MaripeddiSupraj/terrawatch@latest
-```
+The repository includes a GoReleaser workflow for tagged Linux, macOS, and Windows binaries. Public release/binary instructions will be added here once the hardened release is published.
 
 ---
 
@@ -213,7 +202,7 @@ terrawatch detect --bin tofu             # force OpenTofu (otherwise auto-detect
 ```
 
 ```text
-  terrawatch 0.3.0
+  terrawatch
 
   no config file — local mode (dry-run)
   engine: terraform
@@ -263,11 +252,11 @@ gitlab:
 **2. Run:**
 
 ```bash
-# see drift without opening a PR
-GITHUB_TOKEN=xxx terrawatch detect --dry-run
+# see drift without opening a PR — no VCS token required
+terrawatch detect --config terrawatch.yaml --dry-run
 
-# full run — opens a PR for each drifted stack
-GITHUB_TOKEN=xxx terrawatch detect
+# full run — token is required only when a PR/MR may be created
+GITHUB_TOKEN=xxx terrawatch detect --config terrawatch.yaml
 ```
 
 ---
@@ -303,9 +292,7 @@ jobs:
           aws-region: ${{ vars.AWS_REGION }}
 
       - name: Install terrawatch
-        run: |
-          curl -sSL https://github.com/MaripeddiSupraj/terrawatch/releases/latest/download/terrawatch_linux_amd64.tar.gz | tar xz
-          sudo mv terrawatch /usr/local/bin/
+        run: go install github.com/MaripeddiSupraj/terrawatch@main
 
       - name: Detect drift
         run: terrawatch detect --config terrawatch.yaml
@@ -417,15 +404,15 @@ stacks:
 # Use either github OR gitlab — not both
 
 github:
-  token: string            # or set GITHUB_TOKEN env var
-  repo: owner/repo         # required
+  token: string            # optional in file; GITHUB_TOKEN env var takes precedence
+  repo: owner/repo         # required for automated PR mode
   base_branch: main        # default: main
   labels: []               # PR labels
   assignees: []            # GitHub usernames
 
 gitlab:
-  token: string            # or set GITLAB_TOKEN env var
-  repo: group/project      # required
+  token: string            # optional in file; GITLAB_TOKEN env var takes precedence
+  repo: group/project      # required for automated MR mode
   url: https://gitlab.com  # for self-hosted GitLab
   base_branch: main        # default: main
   labels: []               # MR labels
@@ -438,20 +425,17 @@ terraform:
 
 ---
 
-## Why not Atlantis or tf-controller?
+## Where TerraWatch fits
 
-| | Atlantis | tf-controller | terrawatch |
-|---|---|---|---|
-| Requires a running server | Yes | Yes (needs K8s) | No |
-| Detects drift automatically | No | No | Yes |
-| Real drift vs. unapplied code | No | No | Yes (`--classify`) |
-| Opens a PR/MR on drift | Yes (on PR only) | No | Yes |
-| Auto-closes resolved drift PRs | No | No | Yes |
-| GitHub + GitLab | GitHub only | No | Yes |
-| OpenTofu support | Partial | No | Yes (auto-detected) |
-| Stored cloud credentials | Yes | Yes | No (OIDC) |
+TerraWatch is not trying to replace a full Terraform execution platform.
 
-terrawatch is not trying to replace Atlantis. It fills the gap: **automatic drift detection with no infrastructure to run**.
+| Tool | Best fit | How TerraWatch differs |
+|---|---|---|
+| **HCP Terraform health assessments** | Teams already using eligible HCP Terraform remote/agent workspaces | TerraWatch runs from an existing CI system and reports through the team's Git workflow |
+| **Atlantis** | PR-driven Terraform plan/apply automation across supported Git hosts | TerraWatch has no long-running Atlantis server and is focused on scheduled/out-of-band drift detection |
+| **tofu-controller** | Flux/Kubernetes teams managing Terraform/OpenTofu through a controller | TerraWatch does not require Kubernetes or a continuously running controller |
+
+The focused use case is: **periodically check existing Terraform/OpenTofu stacks, distinguish real drift from unapplied code when requested, suppress known noise, and surface actionable results through GitHub/GitLab review workflows.**
 
 ---
 

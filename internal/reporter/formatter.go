@@ -1,9 +1,11 @@
 package reporter
 
 import (
+	"crypto/sha256"
 	"fmt"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/MaripeddiSupraj/terrawatch/internal/detector"
 )
@@ -11,14 +13,57 @@ import (
 // driftBranchPrefix marks branches terrawatch created. Auto-close only ever
 // touches PRs/MRs whose head branch carries this prefix, so a manually
 // created PR that happens to share the title is never closed.
-const driftBranchPrefix = "drift/"
+const (
+	driftBranchPrefix  = "drift/"
+	maxPRPlanBytes     = 45_000
+	maxReportPlanBytes = 900_000
+)
+
+// safeSlug converts an arbitrary stack name into a single safe path/ref segment.
+// User-controlled stack names must never be allowed to create nested paths,
+// invalid git refs, or path traversal in drift report filenames.
+func safeSlug(input string) string {
+	var b strings.Builder
+	lastDash := false
+	for _, r := range input {
+		valid := unicode.IsLetter(r) || unicode.IsDigit(r) || r == '-' || r == '_' || r == '.'
+		if valid {
+			b.WriteRune(r)
+			lastDash = false
+			continue
+		}
+		if !lastDash {
+			b.WriteByte('-')
+			lastDash = true
+		}
+	}
+
+	slug := strings.Trim(b.String(), ".-")
+	if slug == "" {
+		slug = "stack"
+	}
+	if len(slug) > 64 {
+		slug = strings.Trim(slug[:64], ".-")
+		if slug == "" {
+			slug = "stack"
+		}
+	}
+
+	// Preserve clean names as-is. If normalization changed the name, append a
+	// stable short digest so two different names cannot collapse to one slug.
+	if slug != input {
+		sum := sha256.Sum256([]byte(input))
+		slug = fmt.Sprintf("%s-%x", slug, sum[:4])
+	}
+	return slug
+}
 
 func branchName(stackName string, t time.Time) string {
-	return fmt.Sprintf("%s%s-%s", driftBranchPrefix, stackName, t.Format("20060102-150405"))
+	return fmt.Sprintf("%s%s-%s", driftBranchPrefix, safeSlug(stackName), t.Format("20060102-150405"))
 }
 
 func reportFilename(stackName string, t time.Time) string {
-	return fmt.Sprintf("drift-reports/%s-%s.md", stackName, t.Format("20060102-150405"))
+	return fmt.Sprintf("drift-reports/%s-%s.md", safeSlug(stackName), t.Format("20060102-150405"))
 }
 
 func prTitle(stackName string) string {
@@ -49,10 +94,15 @@ func prBody(d detector.DriftResult) string {
 	b.WriteString(fmt.Sprintf("| Add | Change | Destroy |\n|-----|--------|---------|\n| %d | %d | %d |\n\n", s.Add, s.Change, s.Destroy))
 
 	b.WriteString("### Plan\n\n")
-	b.WriteString("<details>\n<summary>Click to expand full diff</summary>\n\n")
+	b.WriteString("<details>\n<summary>Click to expand diff</summary>\n\n")
 	b.WriteString("```diff\n")
-	b.WriteString(planAsDiff(d.Plan.Output))
-	b.WriteString("\n```\n\n</details>\n\n")
+	plan, truncated := truncatePlan(planAsDiff(d.Plan.Output), maxPRPlanBytes)
+	b.WriteString(plan)
+	b.WriteString("\n```\n\n")
+	if truncated {
+		b.WriteString("> Plan output was truncated in the PR body. The committed drift report contains a larger excerpt.\n\n")
+	}
+	b.WriteString("</details>\n\n")
 
 	b.WriteString("---\n")
 	b.WriteString("_Auto-detected by [terrawatch](https://github.com/MaripeddiSupraj/terrawatch). Review and apply to resolve drift._\n")
@@ -61,7 +111,41 @@ func prBody(d detector.DriftResult) string {
 }
 
 func reportFileContent(d detector.DriftResult) string {
-	return prBody(d)
+	body := prBody(d)
+	if len(d.Plan.Output) <= maxPRPlanBytes {
+		return body
+	}
+
+	// The PR body is intentionally small enough for VCS APIs. The committed
+	// report carries a larger bounded excerpt without risking the GitHub
+	// Contents API size limit.
+	fullPlan, truncated := truncatePlan(planAsDiff(d.Plan.Output), maxReportPlanBytes)
+	start := strings.Index(body, "```diff\n")
+	if start == -1 {
+		return body
+	}
+	contentStart := start + len("```diff\n")
+	end := strings.Index(body[contentStart:], "\n```")
+	if end == -1 {
+		return body
+	}
+	contentEnd := contentStart + end
+	replacement := fullPlan
+	if truncated {
+		replacement += "\n\n# ... output truncated by terrawatch ..."
+	}
+	return body[:contentStart] + replacement + body[contentEnd:]
+}
+
+func truncatePlan(plan string, limit int) (string, bool) {
+	if limit <= 0 || len(plan) <= limit {
+		return plan, false
+	}
+	cut := limit
+	for cut > 0 && cut < len(plan) && (plan[cut]&0xC0) == 0x80 {
+		cut--
+	}
+	return plan[:cut] + "\n... output truncated by terrawatch ...", true
 }
 
 // planAsDiff maps terraform plan symbols so GitHub diff syntax highlights them:
@@ -80,7 +164,6 @@ func planAsDiff(output string) string {
 		case strings.HasPrefix(trimmed, "- ") || strings.HasPrefix(trimmed, "-\""):
 			out = append(out, line)
 		case strings.HasPrefix(trimmed, "~ "):
-			// show update lines as removed-then-added so diff coloring makes sense
 			out = append(out, "- "+strings.TrimPrefix(trimmed, "~ "))
 			out = append(out, "+ "+strings.TrimPrefix(trimmed, "~ "))
 		default:

@@ -16,9 +16,13 @@ type mockPlanner struct {
 	refreshResult *terraform.PlanResult
 	refreshErr    error
 	refreshCalls  int
+	initConfig    map[string]string
 }
 
-func (m *mockPlanner) Init() error                                  { return m.initErr }
+func (m *mockPlanner) Init(cfg map[string]string) error {
+	m.initConfig = cfg
+	return m.initErr
+}
 func (m *mockPlanner) Plan(_ string) (*terraform.PlanResult, error) { return m.result, m.planErr }
 func (m *mockPlanner) PlanRefreshOnly(_ string) (*terraform.PlanResult, error) {
 	m.refreshCalls++
@@ -248,5 +252,61 @@ func TestNew_strict_mode_enables_classify(t *testing.T) {
 	cfg.DriftMode = config.DriftModeAll
 	if New(cfg).Classify {
 		t.Error("drift_mode all must not enable classification")
+	}
+}
+
+
+func TestDetect_passes_backend_config_to_init(t *testing.T) {
+	stack := config.Stack{
+		Name: "prod",
+		Path: "./prod",
+		BackendConfig: map[string]string{
+			"bucket": "tf-state",
+			"key":    "prod/terraform.tfstate",
+		},
+	}
+	cfg := testConfig(stack)
+	m := &mockPlanner{result: &terraform.PlanResult{HasChanges: false}}
+	d := newDetectorWithMock(cfg, m)
+
+	if _, err := d.Detect(); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if m.initConfig["bucket"] != "tf-state" || m.initConfig["key"] != "prod/terraform.tfstate" {
+		t.Fatalf("backend config was not passed to init: %#v", m.initConfig)
+	}
+}
+
+
+func TestClassify_applies_ignore_rules_to_refresh_plan(t *testing.T) {
+	cfg := testConfig(config.Stack{Name: "prod", Path: "./prod"})
+	cfg.Ignore = []config.IgnoreRule{{Resource: "aws_autoscaling_group.*"}}
+
+	m := &mockPlanner{
+		result: &terraform.PlanResult{
+			HasChanges: true,
+			ResourceChanges: []terraform.ResourceChange{
+				{Address: "aws_instance.app", Actions: []string{"update"}},
+			},
+		},
+		refreshResult: &terraform.PlanResult{
+			HasChanges: true,
+			ResourceChanges: []terraform.ResourceChange{
+				{Address: "aws_autoscaling_group.web", Actions: []string{"update"}},
+			},
+		},
+	}
+	d := newDetectorWithMock(cfg, m)
+	d.Classify = true
+
+	drifts, err := d.Detect()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(drifts) != 1 {
+		t.Fatalf("expected one result, got %d", len(drifts))
+	}
+	if drifts[0].Kind != KindUnappliedChanges {
+		t.Fatalf("ignored refresh-only noise must not classify as infra drift; got %q", drifts[0].Kind)
 	}
 }

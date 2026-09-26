@@ -76,7 +76,7 @@ func (d *Detector) DetectOne(ws config.Stack) (*DriftResult, error) {
 func (d *Detector) checkStack(ws config.Stack) (*DriftResult, error) {
 	runner := d.plannerFunc(ws)
 
-	if err := runner.Init(); err != nil {
+	if err := runner.Init(ws.BackendConfig); err != nil {
 		return nil, fmt.Errorf("init failed: %w", err)
 	}
 
@@ -89,19 +89,11 @@ func (d *Detector) checkStack(ws config.Stack) (*DriftResult, error) {
 		return nil, nil
 	}
 
-	// Apply ignore rules to reduce noise.
-	hidden := 0
-	if len(d.cfg.Ignore) > 0 || len(ws.Ignore) > 0 {
-		filtered := driftfilter.Apply(plan.ResourceChanges, d.cfg.Ignore, ws.Ignore)
-		hidden = filtered.HiddenChanges
-
-		if len(filtered.Changes) < len(plan.ResourceChanges) {
-			newSummary := driftfilter.ComputeSummary(filtered.Changes)
-			plan.Summary = newSummary
-			plan.ResourceChanges = filtered.Changes
-			plan.HasChanges = len(filtered.Changes) > 0
-		}
-	}
+	// Apply ignore rules to reduce noise before deciding whether the stack
+	// is drifted. The same filtering must also be applied to refresh-only
+	// classification below or ignored provider noise can produce false
+	// "infra drift" classifications.
+	hidden := d.filterPlan(plan, ws)
 
 	if !plan.HasChanges {
 		return nil, nil
@@ -113,6 +105,7 @@ func (d *Detector) checkStack(ws config.Stack) (*DriftResult, error) {
 		if err != nil {
 			return nil, fmt.Errorf("refresh-only plan failed: %w", err)
 		}
+		d.filterPlan(refresh, ws)
 		if refresh.HasChanges {
 			kind = KindInfraDrift
 		} else {
@@ -127,4 +120,19 @@ func (d *Detector) checkStack(ws config.Stack) (*DriftResult, error) {
 		HiddenChanges: hidden,
 		Kind:          kind,
 	}, nil
+}
+
+
+func (d *Detector) filterPlan(plan *terraform.PlanResult, ws config.Stack) int {
+	if plan == nil || !plan.HasChanges || (len(d.cfg.Ignore) == 0 && len(ws.Ignore) == 0) {
+		return 0
+	}
+
+	filtered := driftfilter.Apply(plan.ResourceChanges, d.cfg.Ignore, ws.Ignore)
+	if len(filtered.Changes) < len(plan.ResourceChanges) {
+		plan.Summary = driftfilter.ComputeSummary(filtered.Changes)
+		plan.ResourceChanges = filtered.Changes
+		plan.HasChanges = len(filtered.Changes) > 0
+	}
+	return filtered.HiddenChanges
 }

@@ -116,7 +116,7 @@ github:
 	}
 }
 
-func TestLoad_missing_token(t *testing.T) {
+func TestLoad_missing_token_is_allowed_for_dry_run(t *testing.T) {
 	os.Unsetenv("GITHUB_TOKEN")
 	yaml := `
 stacks:
@@ -125,9 +125,12 @@ stacks:
 github:
   repo: org/repo
 `
-	_, err := Load(writeTemp(t, yaml))
-	if err == nil {
-		t.Fatal("expected error for missing token")
+	cfg, err := Load(writeTemp(t, yaml))
+	if err != nil {
+		t.Fatalf("config parsing should not require VCS credentials: %v", err)
+	}
+	if cfg.GitHub.Token != "" {
+		t.Fatalf("expected empty token, got %q", cfg.GitHub.Token)
 	}
 }
 
@@ -245,5 +248,72 @@ func TestTerraformTimeout(t *testing.T) {
 	cfg.Terraform.Timeout = "0"
 	if got := cfg.TerraformTimeout(def); got != 0 {
 		t.Errorf("expected 0 (disabled), got %v", got)
+	}
+}
+
+
+func TestLoad_rejects_duplicate_stack_names(t *testing.T) {
+	yaml := `
+stacks:
+  - name: prod
+    path: ./a
+  - name: prod
+    path: ./b
+github:
+  repo: org/repo
+`
+	if _, err := Load(writeTemp(t, yaml)); err == nil {
+		t.Fatal("expected duplicate stack names to be rejected")
+	}
+}
+
+func TestLoad_rejects_invalid_ignore_glob(t *testing.T) {
+	yaml := `
+ignore:
+  - resource: "["
+stacks:
+  - name: dev
+    path: ./dev
+github:
+  repo: org/repo
+`
+	if _, err := Load(writeTemp(t, yaml)); err == nil {
+		t.Fatal("expected invalid ignore glob to be rejected")
+	}
+}
+
+func TestLoad_rejects_empty_ignore_attribute(t *testing.T) {
+	yaml := `
+ignore:
+  - resource: "*"
+    attributes: ["tags.Name", ""]
+stacks:
+  - name: dev
+    path: ./dev
+github:
+  repo: org/repo
+`
+	if _, err := Load(writeTemp(t, yaml)); err == nil {
+		t.Fatal("expected empty ignore attribute to be rejected")
+	}
+}
+
+
+func TestLoad_environment_token_overrides_file_token(t *testing.T) {
+	t.Setenv("GITHUB_TOKEN", "env-token")
+	yaml := `
+stacks:
+  - name: dev
+    path: ./dev
+github:
+  token: file-token
+  repo: org/repo
+`
+	cfg, err := Load(writeTemp(t, yaml))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.GitHub.Token != "env-token" {
+		t.Fatalf("environment token should override config token, got %q", cfg.GitHub.Token)
 	}
 }
