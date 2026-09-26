@@ -13,7 +13,11 @@ import (
 // driftBranchPrefix marks branches terrawatch created. Auto-close only ever
 // touches PRs/MRs whose head branch carries this prefix, so a manually
 // created PR that happens to share the title is never closed.
-const driftBranchPrefix = "drift/"
+const (
+	driftBranchPrefix  = "drift/"
+	maxPRPlanBytes     = 45_000
+	maxReportPlanBytes = 900_000
+)
 
 // safeSlug converts an arbitrary stack name into a single safe path/ref segment.
 // User-controlled stack names must never be allowed to create nested paths,
@@ -90,10 +94,15 @@ func prBody(d detector.DriftResult) string {
 	b.WriteString(fmt.Sprintf("| Add | Change | Destroy |\n|-----|--------|---------|\n| %d | %d | %d |\n\n", s.Add, s.Change, s.Destroy))
 
 	b.WriteString("### Plan\n\n")
-	b.WriteString("<details>\n<summary>Click to expand full diff</summary>\n\n")
+	b.WriteString("<details>\n<summary>Click to expand diff</summary>\n\n")
 	b.WriteString("```diff\n")
-	b.WriteString(planAsDiff(d.Plan.Output))
-	b.WriteString("\n```\n\n</details>\n\n")
+	plan, truncated := truncatePlan(planAsDiff(d.Plan.Output), maxPRPlanBytes)
+	b.WriteString(plan)
+	b.WriteString("\n```\n\n")
+	if truncated {
+		b.WriteString("> Plan output was truncated in the PR body. The committed drift report contains a larger excerpt.\n\n")
+	}
+	b.WriteString("</details>\n\n")
 
 	b.WriteString("---\n")
 	b.WriteString("_Auto-detected by [terrawatch](https://github.com/MaripeddiSupraj/terrawatch). Review and apply to resolve drift._\n")
@@ -102,7 +111,38 @@ func prBody(d detector.DriftResult) string {
 }
 
 func reportFileContent(d detector.DriftResult) string {
-	return prBody(d)
+	body := prBody(d)
+	if len(d.Plan.Output) <= maxPRPlanBytes {
+		return body
+	}
+
+	// The PR body is intentionally small enough for VCS APIs. The committed
+	// report carries a larger bounded excerpt without risking the GitHub
+	// Contents API size limit.
+	fullPlan, truncated := truncatePlan(planAsDiff(d.Plan.Output), maxReportPlanBytes)
+	start := strings.Index(body, "```diff\n")
+	end := strings.Index(body[start+len("```diff\n"):], "\n```")
+	if start == -1 || end == -1 {
+		return body
+	}
+	contentStart := start + len("```diff\n")
+	contentEnd := contentStart + end
+	replacement := fullPlan
+	if truncated {
+		replacement += "\n\n# ... output truncated by terrawatch ..."
+	}
+	return body[:contentStart] + replacement + body[contentEnd:]
+}
+
+func truncatePlan(plan string, limit int) (string, bool) {
+	if limit <= 0 || len(plan) <= limit {
+		return plan, false
+	}
+	cut := limit
+	for cut > 0 && cut < len(plan) && (plan[cut]&0xC0) == 0x80 {
+		cut--
+	}
+	return plan[:cut] + "\n... output truncated by terrawatch ...", true
 }
 
 // planAsDiff maps terraform plan symbols so GitHub diff syntax highlights them:
