@@ -4,6 +4,10 @@ terraform {
       source  = "hashicorp/null"
       version = "~> 3.0"
     }
+    local = {
+      source  = "hashicorp/local"
+      version = "~> 2.0"
+    }
   }
 
   backend "local" {
@@ -22,4 +26,11 @@ resource "null_resource" "example" {
   triggers = {
     id = count.index
   }
+}
+
+# Used by integration tests to create genuine out-of-band drift without
+# requiring AWS/GCP/Azure credentials.
+resource "local_file" "managed" {
+  filename = "${path.module}/managed.txt"
+  content  = "managed by terraform\n"
 }
