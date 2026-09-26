@@ -3,7 +3,6 @@
 **Catch Terraform drift before it causes an incident.**
 
 [![CI](https://github.com/MaripeddiSupraj/terrawatch/actions/workflows/ci.yml/badge.svg)](https://github.com/MaripeddiSupraj/terrawatch/actions/workflows/ci.yml)
-[![Release](https://img.shields.io/github/v/release/MaripeddiSupraj/terrawatch)](https://github.com/MaripeddiSupraj/terrawatch/releases/latest)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Terraform | OpenTofu](https://img.shields.io/badge/Terraform-%7C%20OpenTofu-7B42BC)](https://opentofu.org)
 
@@ -16,9 +15,8 @@ A free, no-server alternative to driftctl (deprecated) and Terraform Cloud's pai
 ## Try it in 30 seconds
 
 ```bash
-# Install (macOS / Linux)
-brew tap MaripeddiSupraj/terrawatch
-brew install terrawatch
+# Install the current source build
+go install github.com/MaripeddiSupraj/terrawatch@main
 
 # Run it in any Terraform directory — no config, no cloud credentials
 cd your-terraform-dir
@@ -176,30 +174,22 @@ When a stack that previously had an open drift PR comes back clean, terrawatch c
 
 ## Install
 
-**Homebrew (Mac / Linux):**
+Until the next tagged release is published, install the current source build:
 
 ```bash
-brew tap MaripeddiSupraj/terrawatch
-brew install terrawatch
+go install github.com/MaripeddiSupraj/terrawatch@main
 ```
 
-**curl (Linux / Mac):**
+Or build from source:
 
 ```bash
-# Linux (amd64)
-curl -sSL https://github.com/MaripeddiSupraj/terrawatch/releases/latest/download/terrawatch_linux_amd64.tar.gz | tar xz
-sudo mv terrawatch /usr/local/bin/
-
-# Mac (Apple Silicon)
-curl -sSL https://github.com/MaripeddiSupraj/terrawatch/releases/latest/download/terrawatch_darwin_arm64.tar.gz | tar xz
-sudo mv terrawatch /usr/local/bin/
+git clone https://github.com/MaripeddiSupraj/terrawatch
+cd terrawatch
+go build -o terrawatch .
 ```
 
-**Go:**
-
-```bash
-go install github.com/MaripeddiSupraj/terrawatch@latest
-```
+Release archives and a Homebrew tap are intentionally not advertised here until
+the public release pipeline has produced and verified them.
 
 ---
 
@@ -276,7 +266,8 @@ GITHUB_TOKEN=xxx terrawatch detect
 
 ### GitHub Actions — scheduled drift detection
 
-Drop this into your infra repo. It runs every 6 hours and can be triggered manually.
+Copy the maintained example from `examples/github-actions/drift-detect.yml` into
+your infrastructure repo. It runs every 6 hours and can also be triggered manually.
 
 ```yaml
 # .github/workflows/drift-detect.yml
@@ -303,9 +294,7 @@ jobs:
           aws-region: ${{ vars.AWS_REGION }}
 
       - name: Install terrawatch
-        run: |
-          curl -sSL https://github.com/MaripeddiSupraj/terrawatch/releases/latest/download/terrawatch_linux_amd64.tar.gz | tar xz
-          sudo mv terrawatch /usr/local/bin/
+        run: go install github.com/MaripeddiSupraj/terrawatch@main
 
       - name: Detect drift
         run: terrawatch detect --config terrawatch.yaml
@@ -442,16 +431,14 @@ terraform:
 
 | | Atlantis | tf-controller | terrawatch |
 |---|---|---|---|
-| Requires a running server | Yes | Yes (needs K8s) | No |
-| Detects drift automatically | No | No | Yes |
-| Real drift vs. unapplied code | No | No | Yes (`--classify`) |
-| Opens a PR/MR on drift | Yes (on PR only) | No | Yes |
-| Auto-closes resolved drift PRs | No | No | Yes |
-| GitHub + GitLab | GitHub only | No | Yes |
-| OpenTofu support | Partial | No | Yes (auto-detected) |
-| Stored cloud credentials | Yes | Yes | No (OIDC) |
+| Operating model | Long-running VCS automation service | Kubernetes controller | CLI in your existing CI |
+| Infrastructure required | Server/container runtime | Kubernetes | No terrawatch service |
+| Primary workflow | Plan/apply around pull requests | Reconcile Terraform resources in-cluster | Scheduled/local drift checks |
+| Drift signal | Different workflow focus | Controller drift detection | `plan` + optional `refresh-only` classification |
+| Review surface | VCS comments/checks | Kubernetes status/events | GitHub PR or GitLab MR |
 
-terrawatch is not trying to replace Atlantis. It fills the gap: **automatic drift detection with no infrastructure to run**.
+terrawatch is not trying to replace Atlantis or tofu-controller. Its niche is
+**CI-native drift detection without operating another controller or service**.
 
 ---
 
