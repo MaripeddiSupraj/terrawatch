@@ -3,6 +3,7 @@ package config
 import (
 	"fmt"
 	"os"
+	"path"
 	"path/filepath"
 	"strings"
 	"time"
@@ -171,13 +172,24 @@ func validate(cfg *Config) error {
 	if len(cfg.Stacks) == 0 {
 		return fmt.Errorf("config: at least one stack is required")
 	}
+	seenStacks := make(map[string]struct{}, len(cfg.Stacks))
 	for _, s := range cfg.Stacks {
-		if s.Name == "" {
+		if strings.TrimSpace(s.Name) == "" {
 			return fmt.Errorf("config: stack name is required")
 		}
-		if s.Path == "" {
+		if _, exists := seenStacks[s.Name]; exists {
+			return fmt.Errorf("config: duplicate stack name %q", s.Name)
+		}
+		seenStacks[s.Name] = struct{}{}
+		if strings.TrimSpace(s.Path) == "" {
 			return fmt.Errorf("config: stack %q path is required", s.Name)
 		}
+		if err := validateIgnoreRules("stack "+s.Name, s.Ignore); err != nil {
+			return err
+		}
+	}
+	if err := validateIgnoreRules("global", cfg.Ignore); err != nil {
+		return err
 	}
 
 	hasGitHub := cfg.GitHub.Repo != ""
@@ -226,6 +238,24 @@ func validate(cfg *Config) error {
 		}
 	}
 
+	return nil
+}
+
+func validateIgnoreRules(scope string, rules []IgnoreRule) error {
+	for i, rule := range rules {
+		if strings.TrimSpace(rule.Resource) == "" {
+			return fmt.Errorf("config: %s ignore rule %d: resource pattern is required", scope, i+1)
+		}
+		if _, err := path.Match(rule.Resource, "probe"); err != nil {
+			return fmt.Errorf("config: %s ignore rule %d: invalid resource pattern %q: %w",
+				scope, i+1, rule.Resource, err)
+		}
+		for _, attr := range rule.Attributes {
+			if strings.TrimSpace(attr) == "" {
+				return fmt.Errorf("config: %s ignore rule %d: attribute path must not be empty", scope, i+1)
+			}
+		}
+	}
 	return nil
 }
 
