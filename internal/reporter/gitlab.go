@@ -36,8 +36,12 @@ func (g *GitLab) CreateDriftPR(ctx context.Context, d detector.DriftResult) (*PR
 	if existing, err := g.findExistingMR(d.Stack.Name); err != nil {
 		return nil, fmt.Errorf("check existing MRs: %w", err)
 	} else if existing != nil {
-		if already, _ := g.lastCommentIsTerrawatch(existing.Number); !already {
-			_ = g.addMRComment(existing.Number, commentBody(d))
+		body := prBody(d)
+		if existing.Body != body {
+			if err := g.updateMRBody(existing.Number, body); err != nil {
+				return nil, fmt.Errorf("refresh existing MR: %w", err)
+			}
+			existing.Body = body
 		}
 		return existing, nil
 	}
@@ -113,8 +117,15 @@ func (g *GitLab) findExistingMR(stackName string) (*PRResult, error) {
 			return nil, err
 		}
 		for _, mr := range mrs {
-			if mr.Title == title {
-				return &PRResult{URL: mr.WebURL, Number: int(mr.IID), Existing: true, HeadRef: mr.SourceBranch}, nil
+			expectedBranchPrefix := driftBranchPrefix + safeSlug(stackName) + "-"
+			if mr.Title == title || strings.HasPrefix(mr.SourceBranch, expectedBranchPrefix) {
+				return &PRResult{
+					URL:      mr.WebURL,
+					Number:   int(mr.IID),
+					Existing: true,
+					HeadRef:  mr.SourceBranch,
+					Body:     mr.Description,
+				}, nil
 			}
 		}
 		if resp.NextPage == 0 {
@@ -191,6 +202,12 @@ func (g *GitLab) lastCommentIsTerrawatch(mrIID int) (bool, error) {
 		return false, err
 	}
 	return strings.Contains(notes[0].Body, "### Drift still present"), nil
+}
+
+func (g *GitLab) updateMRBody(mrIID int, body string) error {
+	_, _, err := g.client.MergeRequests.UpdateMergeRequest(g.project, int64(mrIID),
+		&gl.UpdateMergeRequestOptions{Description: &body})
+	return err
 }
 
 func (g *GitLab) addMRComment(mrIID int, body string) error {
