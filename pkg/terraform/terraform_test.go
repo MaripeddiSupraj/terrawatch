@@ -314,3 +314,31 @@ func TestPlan_does_not_pass_refresh_only(t *testing.T) {
 		t.Errorf("normal plan must not pass -refresh-only, got:\n%s", args)
 	}
 }
+
+
+func TestInit_passes_backend_config_in_stable_order(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("unix-only fake binary")
+	}
+	dir := t.TempDir()
+	bin := fakeTerraform(t, dir, 0)
+	r := New(bin, dir)
+
+	err := r.Init(map[string]string{
+		"key":    "prod/terraform.tfstate",
+		"bucket": "tf-state",
+	})
+	if err != nil {
+		t.Fatalf("unexpected init error: %v", err)
+	}
+
+	args, err := os.ReadFile(filepath.Join(dir, "args.log"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := string(args)
+	want := "init -input=false -no-color -backend-config=bucket=tf-state -backend-config=key=prod/terraform.tfstate"
+	if !strings.Contains(got, want) {
+		t.Fatalf("backend config args missing or unstable:\n%s", got)
+	}
+}
