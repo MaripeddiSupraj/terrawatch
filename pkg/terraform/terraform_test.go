@@ -342,3 +342,27 @@ func TestInit_passes_backend_config_in_stable_order(t *testing.T) {
 		t.Fatalf("backend config args missing or unstable:\n%s", got)
 	}
 }
+
+
+func TestNewPlanName_is_unique_and_relative(t *testing.T) {
+	dir := t.TempDir()
+	r := New("terraform", dir)
+
+	a, err := r.newPlanName(".terrawatch-plan")
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, err := r.newPlanName(".terrawatch-plan")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if a == b {
+		t.Fatalf("expected unique plan names, got %q twice", a)
+	}
+	if filepath.IsAbs(a) || filepath.Dir(a) != "." {
+		t.Fatalf("plan name must be relative to working directory, got %q", a)
+	}
+	if !strings.HasPrefix(a, ".terrawatch-plan-") {
+		t.Fatalf("unexpected plan prefix: %q", a)
+	}
+}
