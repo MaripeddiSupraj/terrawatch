@@ -13,12 +13,47 @@ import (
 // created PR that happens to share the title is never closed.
 const driftBranchPrefix = "drift/"
 
+func safeName(stackName string) string {
+	var b strings.Builder
+	lastDash := false
+	for _, r := range stackName {
+		valid := (r >= 'a' && r <= 'z') ||
+			(r >= 'A' && r <= 'Z') ||
+			(r >= '0' && r <= '9') ||
+			r == '.' || r == '_' || r == '-'
+		if valid {
+			b.WriteRune(r)
+			lastDash = false
+			continue
+		}
+		if !lastDash {
+			b.WriteByte('-')
+			lastDash = true
+		}
+	}
+
+	name := strings.Trim(b.String(), ".-_")
+	for strings.Contains(name, "..") {
+		name = strings.ReplaceAll(name, "..", ".")
+	}
+	if name == "" {
+		name = "stack"
+	}
+	if strings.HasSuffix(strings.ToLower(name), ".lock") {
+		name += "-stack"
+	}
+	if len(name) > 80 {
+		name = strings.Trim(name[:80], ".-_")
+	}
+	return name
+}
+
 func branchName(stackName string, t time.Time) string {
-	return fmt.Sprintf("%s%s-%s", driftBranchPrefix, stackName, t.Format("20060102-150405"))
+	return fmt.Sprintf("%s%s-%s", driftBranchPrefix, safeName(stackName), t.Format("20060102-150405"))
 }
 
 func reportFilename(stackName string, t time.Time) string {
-	return fmt.Sprintf("drift-reports/%s-%s.md", stackName, t.Format("20060102-150405"))
+	return fmt.Sprintf("drift-reports/%s-%s.md", safeName(stackName), t.Format("20060102-150405"))
 }
 
 func prTitle(stackName string) string {
