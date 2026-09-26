@@ -297,3 +297,23 @@ github:
 		t.Fatal("expected empty ignore attribute to be rejected")
 	}
 }
+
+
+func TestLoad_environment_token_overrides_file_token(t *testing.T) {
+	t.Setenv("GITHUB_TOKEN", "env-token")
+	yaml := `
+stacks:
+  - name: dev
+    path: ./dev
+github:
+  token: file-token
+  repo: org/repo
+`
+	cfg, err := Load(writeTemp(t, yaml))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.GitHub.Token != "env-token" {
+		t.Fatalf("environment token should override config token, got %q", cfg.GitHub.Token)
+	}
+}
