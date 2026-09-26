@@ -130,10 +130,13 @@ func (r *Runner) PlanRefreshOnly(varsFile string) (*PlanResult, error) {
 }
 
 func (r *Runner) plan(varsFile string, refreshOnly bool) (*PlanResult, error) {
-	// planName is relative to workingDir — terraform resolves it from its own CWD
-	planName := ".terrawatch-plan"
+	prefix := ".terrawatch-plan"
 	if refreshOnly {
-		planName = ".terrawatch-refresh-plan"
+		prefix = ".terrawatch-refresh-plan"
+	}
+	planName, err := r.newPlanName(prefix)
+	if err != nil {
+		return nil, err
 	}
 	planFileAbs := filepath.Join(r.workingDir, planName)
 	defer os.Remove(planFileAbs)
@@ -171,6 +174,22 @@ func (r *Runner) plan(varsFile string, refreshOnly bool) (*PlanResult, error) {
 		}
 		return nil, fmt.Errorf("terraform plan failed (exit %d): %s", exitCode, out)
 	}
+}
+
+func (r *Runner) newPlanName(prefix string) (string, error) {
+	f, err := os.CreateTemp(r.workingDir, prefix+"-*")
+	if err != nil {
+		return "", fmt.Errorf("create temporary plan path: %w", err)
+	}
+	name := filepath.Base(f.Name())
+	if err := f.Close(); err != nil {
+		_ = os.Remove(f.Name())
+		return "", fmt.Errorf("close temporary plan path: %w", err)
+	}
+	if err := os.Remove(f.Name()); err != nil {
+		return "", fmt.Errorf("prepare temporary plan path: %w", err)
+	}
+	return name, nil
 }
 
 func (r *Runner) parseSummary(planName string) (*Summary, []ResourceChange, error) {
