@@ -73,11 +73,16 @@ func (g *GitHub) CreateDriftPR(ctx context.Context, d detector.DriftResult) (*PR
 	if err := g.createBranch(ctx, branch, baseSHA); err != nil {
 		return nil, fmt.Errorf("create branch: %w", err)
 	}
+	cleanupBranch := func() {
+		_, _ = g.client.Git.DeleteRef(ctx, g.owner, g.repo, "refs/heads/"+branch)
+	}
 	if err := g.createFile(ctx, branch, filename, content, d); err != nil {
+		cleanupBranch()
 		return nil, fmt.Errorf("create file: %w", err)
 	}
 	pr, err := g.openPR(ctx, branch, d)
 	if err != nil {
+		cleanupBranch()
 		return nil, fmt.Errorf("open PR: %w", err)
 	}
 	return pr, nil

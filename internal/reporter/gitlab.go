@@ -46,10 +46,19 @@ func (g *GitLab) CreateDriftPR(ctx context.Context, d detector.DriftResult) (*PR
 	if err := g.createBranch(branch); err != nil {
 		return nil, fmt.Errorf("create branch: %w", err)
 	}
+	cleanupBranch := func() {
+		_, _ = g.client.Branches.DeleteBranch(g.project, branch)
+	}
 	if err := g.createFile(branch, filename, content, d); err != nil {
+		cleanupBranch()
 		return nil, fmt.Errorf("create file: %w", err)
 	}
-	return g.openMR(branch, d)
+	mr, err := g.openMR(branch, d)
+	if err != nil {
+		cleanupBranch()
+		return nil, fmt.Errorf("open MR: %w", err)
+	}
+	return mr, nil
 }
 
 // CloseResolvedDriftPR closes the open drift MR for a clean stack, commenting

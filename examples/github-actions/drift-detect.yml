@@ -1,0 +1,54 @@
+# Copy this file into the Terraform/OpenTofu repository you want to monitor.
+# It is intentionally kept under examples/ in the terrawatch source repository
+# so this project does not run a broken scheduled scan without your cloud config.
+name: Drift Detection
+
+on:
+  schedule:
+    - cron: "0 */6 * * *"
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Dry run (no PR created)"
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  detect:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "~1.9"
+          terraform_wrapper: false
+
+      # Replace this AWS step with the authentication method for your cloud.
+      # Prefer OIDC/workload identity over long-lived access keys.
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+
+      - name: Install terrawatch
+        run: |
+          go install github.com/MaripeddiSupraj/terrawatch@main
+          echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
+
+      - name: Detect drift
+        env:
+          GITHUB_TOKEN: ${{ secrets.TERRAWATCH_PAT }}
+        run: |
+          FLAGS=""
+          if [ "${{ inputs.dry_run }}" = "true" ]; then
+            FLAGS="--dry-run"
+          fi
+          terrawatch detect --config terrawatch.yaml $FLAGS

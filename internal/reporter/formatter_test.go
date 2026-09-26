@@ -133,3 +133,25 @@ func TestPRBody_unapplied_kind(t *testing.T) {
 		t.Errorf("expected unapplied-changes callout in PR body, got:\n%s", body)
 	}
 }
+
+func TestSafeName_sanitizes_ref_and_path_metacharacters(t *testing.T) {
+	got := safeName("../prod / main@{x}.lock")
+	if strings.Contains(got, "/") || strings.Contains(got, "..") || strings.Contains(got, " ") {
+		t.Fatalf("safeName returned unsafe component %q", got)
+	}
+	if strings.HasSuffix(strings.ToLower(got), ".lock") {
+		t.Fatalf("safeName must not end in .lock: %q", got)
+	}
+}
+
+func TestBranchAndReportFilename_use_same_safe_component(t *testing.T) {
+	stack := "payments/prod east"
+	branch := branchName(stack, fixedTime)
+	report := reportFilename(stack, fixedTime)
+	if strings.Contains(branch, "payments/prod") || strings.Contains(report, "payments/prod") {
+		t.Fatalf("raw stack path leaked into generated names: %q %q", branch, report)
+	}
+	if !strings.Contains(branch, "payments-prod-east") || !strings.Contains(report, "payments-prod-east") {
+		t.Fatalf("expected sanitized stack name in both outputs: %q %q", branch, report)
+	}
+}
