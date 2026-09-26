@@ -74,10 +74,12 @@ func (g *GitHub) CreateDriftPR(ctx context.Context, d detector.DriftResult) (*PR
 		return nil, fmt.Errorf("create branch: %w", err)
 	}
 	if err := g.createFile(ctx, branch, filename, content, d); err != nil {
+		g.deleteBranchBestEffort(ctx, branch)
 		return nil, fmt.Errorf("create file: %w", err)
 	}
 	pr, err := g.openPR(ctx, branch, d)
 	if err != nil {
+		g.deleteBranchBestEffort(ctx, branch)
 		return nil, fmt.Errorf("open PR: %w", err)
 	}
 	return pr, nil
@@ -180,6 +182,13 @@ func (g *GitHub) createFile(ctx context.Context, branch, filename, content strin
 	}
 	_, _, err := g.client.Repositories.CreateFile(ctx, g.owner, g.repo, filename, opts)
 	return err
+}
+
+func (g *GitHub) deleteBranchBestEffort(ctx context.Context, branch string) {
+	if !strings.HasPrefix(branch, driftBranchPrefix) {
+		return
+	}
+	_, _ = g.client.Git.DeleteRef(ctx, g.owner, g.repo, "refs/heads/"+branch)
 }
 
 // lastCommentIsTerrawatch returns true if the most recent comment on the PR
