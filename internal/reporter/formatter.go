@@ -1,9 +1,11 @@
 package reporter
 
 import (
+	"crypto/sha256"
 	"fmt"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/MaripeddiSupraj/terrawatch/internal/detector"
 )
@@ -13,12 +15,51 @@ import (
 // created PR that happens to share the title is never closed.
 const driftBranchPrefix = "drift/"
 
+// safeSlug converts an arbitrary stack name into a single safe path/ref segment.
+// User-controlled stack names must never be allowed to create nested paths,
+// invalid git refs, or path traversal in drift report filenames.
+func safeSlug(input string) string {
+	var b strings.Builder
+	lastDash := false
+	for _, r := range input {
+		valid := unicode.IsLetter(r) || unicode.IsDigit(r) || r == '-' || r == '_' || r == '.'
+		if valid {
+			b.WriteRune(r)
+			lastDash = false
+			continue
+		}
+		if !lastDash {
+			b.WriteByte('-')
+			lastDash = true
+		}
+	}
+
+	slug := strings.Trim(b.String(), ".-")
+	if slug == "" {
+		slug = "stack"
+	}
+	if len(slug) > 64 {
+		slug = strings.Trim(slug[:64], ".-")
+		if slug == "" {
+			slug = "stack"
+		}
+	}
+
+	// Preserve clean names as-is. If normalization changed the name, append a
+	// stable short digest so two different names cannot collapse to one slug.
+	if slug != input {
+		sum := sha256.Sum256([]byte(input))
+		slug = fmt.Sprintf("%s-%x", slug, sum[:4])
+	}
+	return slug
+}
+
 func branchName(stackName string, t time.Time) string {
-	return fmt.Sprintf("%s%s-%s", driftBranchPrefix, stackName, t.Format("20060102-150405"))
+	return fmt.Sprintf("%s%s-%s", driftBranchPrefix, safeSlug(stackName), t.Format("20060102-150405"))
 }
 
 func reportFilename(stackName string, t time.Time) string {
-	return fmt.Sprintf("drift-reports/%s-%s.md", stackName, t.Format("20060102-150405"))
+	return fmt.Sprintf("drift-reports/%s-%s.md", safeSlug(stackName), t.Format("20060102-150405"))
 }
 
 func prTitle(stackName string) string {
@@ -80,7 +121,6 @@ func planAsDiff(output string) string {
 		case strings.HasPrefix(trimmed, "- ") || strings.HasPrefix(trimmed, "-\""):
 			out = append(out, line)
 		case strings.HasPrefix(trimmed, "~ "):
-			// show update lines as removed-then-added so diff coloring makes sense
 			out = append(out, "- "+strings.TrimPrefix(trimmed, "~ "))
 			out = append(out, "+ "+strings.TrimPrefix(trimmed, "~ "))
 		default:
