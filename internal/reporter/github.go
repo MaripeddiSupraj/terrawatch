@@ -32,8 +32,11 @@ type PRResult struct {
 func ptr[T any](v T) *T { return &v }
 
 func NewGitHub(cfg config.GitHub) (*GitHub, error) {
-	parts := strings.SplitN(cfg.Repo, "/", 2)
-	if len(parts) != 2 {
+	if cfg.Token == "" {
+		return nil, fmt.Errorf("github token required via config or GITHUB_TOKEN env var")
+	}
+	parts := strings.Split(cfg.Repo, "/")
+	if len(parts) != 2 || parts[0] == "" || parts[1] == "" {
 		return nil, fmt.Errorf("invalid repo format %q, expected owner/repo", cfg.Repo)
 	}
 
