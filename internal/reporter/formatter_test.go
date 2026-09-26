@@ -160,3 +160,37 @@ func TestPRBody_unapplied_kind(t *testing.T) {
 		t.Errorf("expected unapplied-changes callout in PR body, got:\n%s", body)
 	}
 }
+
+
+func TestPRBody_truncates_large_plan(t *testing.T) {
+	d := makeDriftResult()
+	d.Plan.Output = strings.Repeat("+ very_large_change\n", 10_000)
+	body := prBody(d)
+	if len(body) > 70_000 {
+		t.Fatalf("PR body unexpectedly large: %d bytes", len(body))
+	}
+	if !strings.Contains(body, "truncated in the PR body") {
+		t.Fatal("expected truncation notice")
+	}
+}
+
+func TestReportFileContent_allows_larger_excerpt(t *testing.T) {
+	d := makeDriftResult()
+	d.Plan.Output = strings.Repeat("+ large_change\n", 10_000)
+	pr := prBody(d)
+	report := reportFileContent(d)
+	if len(report) <= len(pr) {
+		t.Fatalf("report should preserve more plan output than PR body: report=%d pr=%d", len(report), len(pr))
+	}
+}
+
+func TestTruncatePlan_preservesUTF8Boundary(t *testing.T) {
+	plan := strings.Repeat("✅", 100)
+	got, truncated := truncatePlan(plan, 101)
+	if !truncated {
+		t.Fatal("expected truncation")
+	}
+	if strings.ToValidUTF8(got, "") != got {
+		t.Fatal("truncated output is not valid UTF-8")
+	}
+}
