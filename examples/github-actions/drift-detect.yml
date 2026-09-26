@@ -40,7 +40,7 @@ jobs:
 
       - name: Install terrawatch
         run: |
-          go install github.com/MaripeddiSupraj/terrawatch@latest
+          go install github.com/MaripeddiSupraj/terrawatch@main
           echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
 
       - name: Detect drift
