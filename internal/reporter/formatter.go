@@ -121,11 +121,14 @@ func reportFileContent(d detector.DriftResult) string {
 	// Contents API size limit.
 	fullPlan, truncated := truncatePlan(planAsDiff(d.Plan.Output), maxReportPlanBytes)
 	start := strings.Index(body, "```diff\n")
-	end := strings.Index(body[start+len("```diff\n"):], "\n```")
-	if start == -1 || end == -1 {
+	if start == -1 {
 		return body
 	}
 	contentStart := start + len("```diff\n")
+	end := strings.Index(body[contentStart:], "\n```")
+	if end == -1 {
+		return body
+	}
 	contentEnd := contentStart + end
 	replacement := fullPlan
 	if truncated {
