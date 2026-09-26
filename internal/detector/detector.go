@@ -76,7 +76,7 @@ func (d *Detector) DetectOne(ws config.Stack) (*DriftResult, error) {
 func (d *Detector) checkStack(ws config.Stack) (*DriftResult, error) {
 	runner := d.plannerFunc(ws)
 
-	if err := runner.Init(); err != nil {
+	if err := runner.Init(ws.BackendConfig); err != nil {
 		return nil, fmt.Errorf("init failed: %w", err)
 	}
 
