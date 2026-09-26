@@ -47,9 +47,15 @@ func (g *GitLab) CreateDriftPR(ctx context.Context, d detector.DriftResult) (*PR
 		return nil, fmt.Errorf("create branch: %w", err)
 	}
 	if err := g.createFile(branch, filename, content, d); err != nil {
+		g.deleteBranchBestEffort(branch)
 		return nil, fmt.Errorf("create file: %w", err)
 	}
-	return g.openMR(branch, d)
+	mr, err := g.openMR(branch, d)
+	if err != nil {
+		g.deleteBranchBestEffort(branch)
+		return nil, fmt.Errorf("open MR: %w", err)
+	}
+	return mr, nil
 }
 
 // CloseResolvedDriftPR closes the open drift MR for a clean stack, commenting
@@ -132,6 +138,13 @@ func (g *GitLab) createFile(branch, filename, content string, d detector.DriftRe
 		Content:       &content,
 	})
 	return err
+}
+
+func (g *GitLab) deleteBranchBestEffort(branch string) {
+	if !strings.HasPrefix(branch, driftBranchPrefix) {
+		return
+	}
+	_, _ = g.client.Branches.DeleteBranch(g.project, branch)
 }
 
 func (g *GitLab) openMR(branch string, d detector.DriftResult) (*PRResult, error) {
