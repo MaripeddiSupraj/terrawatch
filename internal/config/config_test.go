@@ -116,7 +116,7 @@ github:
 	}
 }
 
-func TestLoad_missing_token(t *testing.T) {
+func TestLoad_missing_token_is_allowed_for_dry_run(t *testing.T) {
 	os.Unsetenv("GITHUB_TOKEN")
 	yaml := `
 stacks:
@@ -125,9 +125,12 @@ stacks:
 github:
   repo: org/repo
 `
-	_, err := Load(writeTemp(t, yaml))
-	if err == nil {
-		t.Fatal("expected error for missing token")
+	cfg, err := Load(writeTemp(t, yaml))
+	if err != nil {
+		t.Fatalf("config parsing should not require VCS credentials: %v", err)
+	}
+	if cfg.GitHub.Token != "" {
+		t.Fatalf("expected empty token, got %q", cfg.GitHub.Token)
 	}
 }
 
