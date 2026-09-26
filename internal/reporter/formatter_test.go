@@ -134,7 +134,6 @@ func TestPRBody_unapplied_kind(t *testing.T) {
 	}
 }
 
-
 func TestSafeName_sanitizes_ref_and_path_metacharacters(t *testing.T) {
 	got := safeName("../prod / main@{x}.lock")
 	if strings.Contains(got, "/") || strings.Contains(got, "..") || strings.Contains(got, " ") {
