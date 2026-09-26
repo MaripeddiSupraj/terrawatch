@@ -154,10 +154,10 @@ func Load(path string) (*Config, error) {
 	}
 
 	// env var token overrides
-	if token := os.Getenv("GITHUB_TOKEN"); token != "" && cfg.GitHub.Token == "" {
+	if token := os.Getenv("GITHUB_TOKEN"); token != "" {
 		cfg.GitHub.Token = token
 	}
-	if token := os.Getenv("GITLAB_TOKEN"); token != "" && cfg.GitLab.Token == "" {
+	if token := os.Getenv("GITLAB_TOKEN"); token != "" {
 		cfg.GitLab.Token = token
 	}
 
