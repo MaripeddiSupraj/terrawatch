@@ -250,3 +250,50 @@ func TestTerraformTimeout(t *testing.T) {
 		t.Errorf("expected 0 (disabled), got %v", got)
 	}
 }
+
+
+func TestLoad_rejects_duplicate_stack_names(t *testing.T) {
+	yaml := `
+stacks:
+  - name: prod
+    path: ./a
+  - name: prod
+    path: ./b
+github:
+  repo: org/repo
+`
+	if _, err := Load(writeTemp(t, yaml)); err == nil {
+		t.Fatal("expected duplicate stack names to be rejected")
+	}
+}
+
+func TestLoad_rejects_invalid_ignore_glob(t *testing.T) {
+	yaml := `
+ignore:
+  - resource: "["
+stacks:
+  - name: dev
+    path: ./dev
+github:
+  repo: org/repo
+`
+	if _, err := Load(writeTemp(t, yaml)); err == nil {
+		t.Fatal("expected invalid ignore glob to be rejected")
+	}
+}
+
+func TestLoad_rejects_empty_ignore_attribute(t *testing.T) {
+	yaml := `
+ignore:
+  - resource: "*"
+    attributes: ["tags.Name", ""]
+stacks:
+  - name: dev
+    path: ./dev
+github:
+  repo: org/repo
+`
+	if _, err := Load(writeTemp(t, yaml)); err == nil {
+		t.Fatal("expected empty ignore attribute to be rejected")
+	}
+}
