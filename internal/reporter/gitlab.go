@@ -21,6 +21,9 @@ func NewGitLab(cfg config.GitLab) (*GitLab, error) {
 	if cfg.Repo == "" {
 		return nil, fmt.Errorf("gitlab.repo is required")
 	}
+	if cfg.Token == "" {
+		return nil, fmt.Errorf("gitlab token required via config or GITLAB_TOKEN env var")
+	}
 	client, err := gl.NewClient(cfg.Token, gl.WithBaseURL(cfg.BaseURL))
 	if err != nil {
 		return nil, fmt.Errorf("gitlab client: %w", err)
