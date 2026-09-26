@@ -34,7 +34,7 @@ stacks:
 
 # GitHub
 github:
-  token: ${GITHUB_TOKEN}          # or set GITHUB_TOKEN env var
+  # Set GITHUB_TOKEN in the environment when PR creation is enabled.
   repo: your-org/your-infra-repo
   base_branch: main
   labels:
@@ -44,7 +44,7 @@ github:
 
 # GitLab (comment out github block and uncomment this)
 # gitlab:
-#   token: ${GITLAB_TOKEN}        # or set GITLAB_TOKEN env var
+#   # Set GITLAB_TOKEN in the environment when MR creation is enabled.
 #   repo: your-group/your-project
 #   url: https://gitlab.com       # optional — for self-hosted GitLab
 #   base_branch: main
